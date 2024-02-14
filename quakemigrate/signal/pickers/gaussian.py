@@ -38,11 +38,11 @@ class GaussianPicker(PhasePicker):
             "GAU_S" : array-like
                 Numpy array stack of Gaussian pick info (each as a dict)
                 for S phase
-    threshold_method : {"MAD", "percentile"}
+    threshold_method : {"MAD", "percentile", "static"}
         Which method to use to calculate the pick threshold; a percentile of the data
         outside the pick windows (e.g. 0.99 = 99th percentile) or a multiple of the
-        Median Absolute Deviation of the signal outside the pick windows. Default uses
-        the MAD method.
+        Median Absolute Deviation of the signal outside the pick windows or a static 
+        threshold. Default uses the MAD method.
     percentile_pick_threshold : float, optional
         Picks will only be made if the onset function exceeds this percentile of the
         noise level (amplitude of onset function outside pick windows). (Default: 1.0)
@@ -50,6 +50,10 @@ class GaussianPicker(PhasePicker):
         Picks will only be made if the onset function exceeds its median value plus this
         multiple of the MAD (calculated from the onset data outside the pick windows).
         (Default: 8)
+    static_pick_threshold : float, optional
+        Picks will only be made if the onset function exceeds the specified static 
+        threshold.
+        (Default: 2)
     plot_picks : bool
         Toggle plotting of phase picks.
 
@@ -77,6 +81,8 @@ class GaussianPicker(PhasePicker):
             )
         elif self.threshold_method == "MAD":
             self.mad_pick_threshold = kwargs.get("mad_pick_threshold", 8.0)
+        elif self.threshold_method == "static":
+            self.static_pick_threshold = kwargs.get("static_pick_threshold", 2.0)
         else:
             raise util.InvalidPickThresholdMethodException
         # Handle deprecated `pick_threshold`
@@ -101,6 +107,8 @@ class GaussianPicker(PhasePicker):
             str_ += f"\t\tPercentile threshold  = {self.percentile_pick_threshold}\n"
         elif self.threshold_method == "MAD":
             str_ += f"\t\tMAD multiplier  = {self.mad_pick_threshold}\n"
+        elif self.threshold_method == "static":
+            str_ += f"\t\tStatic threshold  = {self.static_pick_threshold}\n"
         if self._fraction_tt is not None:
             str_ += f"\t\tSearch window   = {self._fraction_tt*100}% of traveltime\n"
 
@@ -301,7 +309,7 @@ class GaussianPicker(PhasePicker):
         windows : list of int
             Indexes of the lower window bound, the phase arrival, and the upper window
             bound.
-        method : {"percentile", "MAD"}
+        method : {"percentile", "MAD", "static"}
             Method used to calculate the pick threshold from the noise data.
 
         Return
@@ -327,6 +335,9 @@ class GaussianPicker(PhasePicker):
             med = np.median(onset_noise)
             mad = util.calculate_mad(onset_noise)
             pick_threshold = med + (mad * self.mad_pick_threshold)
+
+        elif method == "static":
+            pick_threshold = self.static_pick_threshold
 
         return pick_threshold
 
