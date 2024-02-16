@@ -15,7 +15,7 @@ import logging
 
 import numpy as np
 from obspy import Stream
-from obspy.signal.trigger import classic_sta_lta
+from obspy.signal.trigger import classic_sta_lta, recursive_sta_lta
 
 import quakemigrate.util as util
 from .base import Onset, OnsetData
@@ -197,7 +197,10 @@ class STALTAOnset(Onset):
     position : str, optional
         Compute centred STA/LTA (STA window is preceded by LTA window; value is assigned
         to end of LTA window / start of STA window) or classic STA/LTA (STA window is
-        within LTA window; value is assigned to end of STA & LTA windows).
+        within LTA window; value is assigned to end of STA & LTA windows) or recursive 
+        STA/LTA (similar to classic STA/LTA except has a decaying exponential impulse 
+        response (see Withers et al. (1998), BSSA), so better performance for P arrivals 
+        with long coda that potentially overlaps with S wave).
         Default: "classic".
 
         Centred gives less phase-shifted (late) onset function, and is closer to a
@@ -434,6 +437,8 @@ class STALTAOnset(Onset):
             onsets = [sta_lta_centred(tr.data, stw, ltw) for tr in stream]
         elif self.position == "classic":
             onsets = [classic_sta_lta(tr.data, stw, ltw) for tr in stream]
+        elif self.position == "recursive":
+            onsets = [recursive_sta_lta(tr.data, stw, ltw) for tr in stream]
         onsets = np.array(onsets)
 
         if timespan:
