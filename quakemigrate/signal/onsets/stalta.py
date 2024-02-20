@@ -211,6 +211,15 @@ class STALTAOnset(Onset):
     sampling_rate : int
         Desired sampling rate for input data, in Hz; sampling rate at which the onset
         functions will be computed.
+    station_phase_weights : dict, optional
+        If specified, contains weights for each phase at each station, to weight the 
+        relative contributions via the onset functions. This is useful if mixing data 
+        types, such as das and conventional data. Can also be useful for using only 
+        certain types of observation for certain phases, by setting weights to zero 
+        (e.g. seismometers for P+S, das for S only, single-comp nodes for P only etc).
+        Default is to not set relative weighting (i.e. all weights are equal to 1).
+        Structure of dict is station_phase_weights[station][phase] = weight, where 
+        weight is a float.
 
     Methods
     -------
@@ -240,6 +249,7 @@ class STALTAOnset(Onset):
         self.all_channels = kwargs.get("all_channels", False)
         self.allow_gaps = kwargs.get("allow_gaps", False)
         self.full_timespan = kwargs.get("full_timespan", True)
+        self.station_phase_weights = kwargs.get("station_phase_weights", None)
 
         # --- Deprecated ---
         self.onset_centred = kwargs.get("onset_centred")
@@ -377,11 +387,19 @@ class STALTAOnset(Onset):
                         nearest_sample=False,
                     )
 
+                # Weight onset data, if specified:
+                # (Note: Useful if using DAS data combined with conventional data)
+                if not self.station_phase_weights == None:
+                    onset_weight = self.station_phase_weights[station][phase]
+                else:
+                    # Or simply set weights as equal:
+                    onset_weight = 1.
+
                 # Calculate onset and add to WaveForm data object; add filtered
                 # waveforms that have passed the availability check to
                 # WaveformData.filtered_waveforms
                 onsets_dict.setdefault(station, {}).update(
-                    {phase: self._onset(waveforms, stw, ltw, log, timespan)}
+                    {phase: onset_weight * self._onset(waveforms, stw, ltw, log, timespan)}
                 )
                 onsets.append(onsets_dict[station][phase])
                 filtered_waveforms += waveforms
