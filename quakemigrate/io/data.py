@@ -17,6 +17,7 @@ import pathlib
 from obspy import read, Stream, UTCDateTime
 
 import quakemigrate.util as util
+from quakemigrate.io.dasio.das import read_das
 
 
 class Archive:
@@ -89,6 +90,44 @@ class Archive:
         midnight), whether to interpolate the data to apply the necessary correction.
         Default behaviour is to just alter the metadata, resulting in a sub-sample
         timing offset. See :func:`~quakemigrate.util.shift_to_sample`.
+    
+    DAS Specific Attributes
+    -----------------------
+    das_archive_path : `pathlib.Path` object, optional
+        If das data is also to be included in analysis, ths is the path to the das data 
+        archive. This currently has to be of a somewhat specific format, where all das 
+        files are in the same directory and are labelled by time. Currently, only files 
+        with start time in the format: *UTC_YYYYMMDD_HHMMSS.???.<das_data_fmt> 
+        are supported. <das_data_fmt> is specified as another attribute of Archive. 
+        Default is das_archive_path = None, resulting in no das data being included in 
+        the analysis.
+    das_data_fmt : str, optional
+        If das data is included (i.e. if <das_archive_path> is specified), then this is 
+        the das format to be read. Currently, the only supported format is h5, but it 
+        is relatively trivial to support other formats in the future (contact the 
+        developers or fork repository). Default is h5.
+    first_last_das_channels : list of 2x ints, optional
+        If specified, selects only certain DAS channels along the fibre, from 
+        first_last_das_channels[0] to first_last_das_channels[1]. Default is to use 
+        all channels.
+    duplicate_das_comps : bool, optional
+        Controls whether Z, N and E for single-component das data are all set to be 
+        eqaul to each other (True) or whether only one component is passed (N).
+    station_prefix : str, optional
+        Station name prefix for das channels. das channels are then named with the 
+        station prefix followed by an integer representing the distance along the fibre.
+        Default is "D".
+    spatial_down_samp_factor : int, optional
+        If specified, will downsample das data spatially by the factor. 
+    fk_filter_params : dict, optional
+        If specified, will apply an fk filter to the data. Applied here as most efficient 
+        to do it before the 2D data is split.
+        keys are: "wavenumber" and "max_freq".
+        Default is to not apply a fk filter.
+    apply_notch_filter : bool, optional
+        If True, applies a notch filter, typically applied to remove generator noise. 
+        Default is False. If specified, should also specify notch_freqs (=[]) and  
+        notch_bw (=2.5).
 
     Methods
     -------
@@ -128,6 +167,18 @@ class Archive:
         self.remove_full_response = response_removal_params.get(
             "remove_full_response", False
         )
+        # DAS data read parameters:
+        self.das_archive_path = pathlib.Path(kwargs.get("das_archive_path", None))
+        self.das_data_fmt = kwargs.get("das_data_fmt", "h5")
+        self.first_last_das_channels = kwargs.get("first_last_das_channels", [0,-1])
+        self.duplicate_das_comps = kwargs.get("duplicate_das_comps", True)
+        self.station_prefix = kwargs.get("station_prefix", "D")
+        self.spatial_down_samp_factor = kwargs.get("spatial_down_samp_factor", 1)
+        self.fk_filter_params = kwargs.get("fk_filter_params", {})
+        self.apply_notch_filter = kwargs.get("apply_notch_filter", False)
+        self.notch_freqs = kwargs.get("notch_freqs", [])
+        self.notch_bw = kwargs.get("notch_bw", 2.5)
+
 
     def __str__(self, response_only=False):
         """
@@ -277,8 +328,10 @@ class Archive:
 
         files = self._load_from_path(starttime - pre_pad, endtime + post_pad)
 
+        # Read in data:
         st = Stream()
         try:
+            # Read in conventional seismometer data:
             first = next(files)
             files = chain([first], files)
             for file in files:
@@ -295,43 +348,64 @@ class Archive:
                 except TypeError:
                     logging.info(f"File not compatible with ObsPy - {file}")
                     continue
-
-            # Merge waveforms channel-by-channel with no-clobber merge
-            st = util.merge_stream(st)
-
-            # Make copy of raw waveforms to output if requested
-            data.raw_waveforms = st.copy()
-
-            # Ensure data is timestamped "on-sample" (i.e. an integer number of samples
-            # after midnight). Otherwise the data will be implicitly shifted when it is
-            # used to calculate the onset function / migrated.
-            st = util.shift_to_sample(st, interpolate=self.interpolate)
-
-            if self.read_all_stations:
-                # Re-populate st with only stations in station file
-                st_selected = Stream()
-                for station in self.stations:
-                    st_selected += st.select(station=station)
-                st = st_selected.copy()
-                del st_selected
-
-            if pre_pad != 0.0 or post_pad != 0.0:
-                # Trim data between start and end time
-                for tr in st:
-                    tr.trim(starttime=starttime, endtime=endtime, nearest_sample=True)
-                    if not bool(tr):
-                        st.remove(tr)
-
-            # Test if the stream is completely empty
-            # (see __nonzero__ for `obspy.Stream` object)
-            if not bool(st):
-                raise util.DataGapException
-
-            # Add cleaned stream to `waveforms`
-            data.waveforms = st
-
         except StopIteration:
-            raise util.ArchiveEmptyException
+            if not self.das_archive_path:
+                raise util.ArchiveEmptyException
+
+        # Read in das data (if available):
+        if self.das_archive_path:
+            try: 
+                st += read_das(self.das_archive_path, self.das_data_fmt, starttime, 
+                            endtime, pre_pad=pre_pad, post_pad=post_pad, 
+                            first_last_das_channels=self.first_last_das_channels,
+                            duplicate_das_comps=self.duplicate_das_comps,
+                            station_prefix=self.station_prefix, 
+                            spatial_down_samp_factor=self.spatial_down_samp_factor,
+                            fk_filter_params=self.fk_filter_params, 
+                            apply_notch_filter=self.apply_notch_filter, 
+                            notch_freqs=self.notch_freqs, notch_bw=self.notch_bw)
+            except ValueError:
+                raise util.ArchiveEmptyException
+
+        # Merge waveforms channel-by-channel with no-clobber merge
+        st = util.merge_stream(st)
+
+        # Make copy of raw waveforms to output if requested
+        data.raw_waveforms = st.copy()
+
+        # Ensure data is timestamped "on-sample" (i.e. an integer number of samples
+        # after midnight). Otherwise the data will be implicitly shifted when it is
+        # used to calculate the onset function / migrated.
+        st = util.shift_to_sample(st, interpolate=self.interpolate)
+
+        if self.read_all_stations:
+            # Re-populate st with only stations in station file
+            st_selected = Stream()
+            for station in self.stations:
+                st_selected += st.select(station=station)
+            st = st_selected.copy()
+            del st_selected
+
+        if pre_pad != 0.0 or post_pad != 0.0:
+            # Trim data between start and end time
+            for tr in st:
+                tr.trim(starttime=starttime, endtime=endtime, nearest_sample=True)
+                if not bool(tr):
+                    st.remove(tr)
+
+        # Test if the stream is completely empty
+        # (see __nonzero__ for `obspy.Stream` object)
+        if not bool(st):
+            raise util.DataGapException
+
+        # Add cleaned stream to `waveforms`
+        data.waveforms = st
+
+
+
+
+        
+
 
         return data
 
