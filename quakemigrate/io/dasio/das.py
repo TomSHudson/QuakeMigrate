@@ -68,7 +68,11 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
     fk_filter_params : dict, optional
         If specified, will apply an fk filter to the data. Applied here as most efficient 
         to do it before the 2D data is split.
-        keys are: "wavenumber" and "max_freq".
+        keys are: "wavenumber", "max_freq" and "v_app_filts". First two are floats, 
+        corresponding to the max. wavenumber and max. freq. to pass, respectively, 
+        and v_app_filts is None or a list of floats, corresponding to specific apparent 
+        velocities to remove (e.g. due to continuous noise from a single source). If in 
+        doubt, set fk_filter_params["v_app_filts"] = None.
         Default is to not apply a fk filter.
     apply_notch_filter : bool, optional
         If True, applies a notch filter, typically applied to remove generator noise. 
@@ -170,7 +174,8 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
     # Apply fk filter:
     if len(list(fk_filter_params.keys())) > 0:
         print('Applying fk filter')
-        data = fk_filter(data, fs, channel_spacing, fk_filter_params['wavenumber'], fk_filter_params['max_freq'])
+        data = fk_filter(data, fs, channel_spacing, fk_filter_params['wavenumber'], fk_filter_params['max_freq'], 
+                        v_app_filts=fk_filter_params['v_app_filts'])
     # Apply notch filter:
     if apply_notch_filter:
         print('Applying notch filter/s')
@@ -212,7 +217,7 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
     return st 
 
 
-def fk_filter(data, fs, ch_space, wavenumber, max_freq, plot=False):
+def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, plot=False):
     """FK filter for a 2D DAS numpy array. Returns a filtered image.
     Originally created by Antony Butcher.
     data - 2D array to filter. Data must be of shape (time_samp, spatial_samp). (np array)
@@ -220,6 +225,7 @@ def fk_filter(data, fs, ch_space, wavenumber, max_freq, plot=False):
     ch_space - Channel spacing, in metres. (float)
     wavenumber - Wavenumber for fk filter. (float)
     max_freq - Maximum frequency for fk filter, in Hz. (float)
+    v_app_filts - If specified, will remove these specific apparent velocities (w/k). (list of floats)
     """
     # Detrend by removing the mean 
     data=data-np.mean(data)
@@ -240,6 +246,20 @@ def fk_filter(data, fs, ch_space, wavenumber, max_freq, plot=False):
     
     # Apply the mask to the data
     ftimagep = fftdata * blurred_mask
+    
+
+    # Define and apply apparent velocity mask, if specifed:
+    dk = 2*np.abs(wavenums[1] - wavenums[0])
+    df = 2*np.abs(freqs[1] - freqs[0])
+    if not v_app_filts==None:
+        for app_v in v_app_filts:
+            app_v_mask = np.logical_and(np.logical_or(wavenumsgrid<=2*np.pi*(abs(freqsgrid)-df)/app_v, wavenumsgrid>=2*np.pi*(abs(freqsgrid)+df)/app_v),
+                                        np.logical_or(abs(freqsgrid)<app_v*(np.abs(wavenumsgrid)-dk)/(2*np.pi),abs(freqsgrid)>app_v*(np.abs(wavenumsgrid)+dk)/(2*np.pi)))
+            x=app_v_mask*1.
+            blurred_app_v_mask = ndimage.gaussian_filter(x, sigma=1)
+            ftimagep = ftimagep * blurred_app_v_mask
+
+    # Shift the ifft:
     ftimagep = np.fft.ifftshift(ftimagep)
     
     # Finally, take the inverse transform and show the blurred image
@@ -250,16 +270,31 @@ def fk_filter(data, fs, ch_space, wavenumber, max_freq, plot=False):
     # Plot the filter, if specified:
     if plot==True:
         # Plots the filter, with area remove greyed out
-        plt.figure(figsize=[6,6])
-        img1 = plt.imshow(np.log10(abs(fftdata)), interpolation='bilinear',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],aspect='auto')
-        img1.set_clim(-5,5)
-        img1 = plt.imshow(abs(blurred_mask-1),cmap='Greys',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],alpha=0.2,aspect='auto')
-        plt.xlabel('Frequency (Hz)')
-        plt.ylabel('Wavenumber (1/m)')
-        plt.xlim(-200,200)
-        plt.ylim(-0.2,0.2)
+        fig, ax = plt.subplots(nrows=3, sharex=True, figsize=[4,8])
+        img1 = ax[0].imshow(abs(fftdata), interpolation='bilinear',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],aspect='auto')
+        # img1.set_clim(-5,5)
+        img1 = ax[0].imshow(abs(blurred_mask-1),cmap='Greys',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],alpha=0.2,aspect='auto')
+        ax[0].set_xlabel('Frequency (Hz)')
+        ax[0].set_ylabel('Wavenumber (1/m)')
+        ax[0].set_title("fk-filter, fk domain")
+
+        # Plots second, app velocity filter, if specified:
+        img1 = ax[1].imshow(abs(fftdata), interpolation='bilinear',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],aspect='auto')
+        ax[1].set_xlabel('Frequency (Hz)')
+        ax[1].set_ylabel('Wavenumber (1/m)')
+        ax[1].set_title("$v_{app}$ filter, fk domain")
+        if not v_app_filts==None:
+            img1 = ax[1].imshow(abs(blurred_app_v_mask-1),cmap='Greys',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],alpha=0.2,aspect='auto')
+
+        # Plots final removed data:
+        img1 = ax[2].imshow(abs(np.fft.fftshift(ftimagep)), interpolation='bilinear',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],aspect='auto')
+        ax[2].set_xlabel('Frequency (Hz)')
+        ax[2].set_ylabel('Wavenumber (1/m)')
+        ax[2].set_title("Final data, fk domain")
+        # plt.xlim(-200,200)
+        # plt.ylim(-0.2,0.2)
         plt.show()
-        
+
     return imagep
     
 

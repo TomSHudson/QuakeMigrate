@@ -122,7 +122,11 @@ class Archive:
     fk_filter_params : dict, optional
         If specified, will apply an fk filter to the data. Applied here as most efficient 
         to do it before the 2D data is split.
-        keys are: "wavenumber" and "max_freq".
+        keys are: "wavenumber", "max_freq" and "v_app_filts". First two are floats, 
+        corresponding to the max. wavenumber and max. freq. to pass, respectively, 
+        and v_app_filts is None or a list of floats, corresponding to specific apparent 
+        velocities to remove (e.g. due to continuous noise from a single source). If in 
+        doubt, set fk_filter_params["v_app_filts"] = None.
         Default is to not apply a fk filter.
     apply_notch_filter : bool, optional
         If True, applies a notch filter, typically applied to remove generator noise. 
