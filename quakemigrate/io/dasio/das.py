@@ -24,7 +24,7 @@ import quakemigrate.io.dasio.load_das_h5 as load_das_h5
 def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, post_pad=0.0, 
             first_last_das_channels=[0,-1], duplicate_das_comps=True, station_prefix="D", 
             spatial_down_samp_factor=1, fk_filter_params={}, apply_notch_filter=False, 
-            notch_freqs=[], notch_bw=2.5):
+            notch_freqs=[], notch_bw=2.5, semblance_stack=False, semblance_v_app_min=1.0):
     """
     Read in das data for a particular time period, and output to obspy stream.
 
@@ -78,6 +78,14 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
         If True, applies a notch filter, typically applied to remove generator noise. 
         Default is False. If specified, should also specify notch_freqs (=[]) and  
         notch_bw (=2.5).
+    semblance_stack : bool, optional
+        If True and das data is to be spatially downsampled, then will downsample das data, 
+        but stacking using semblance based stacking. Default is not to perform semblance 
+        stacking, as not particularly computationally efficient.
+    semblance_v_app_min : float, optional
+        Only used if semblance_stack=True. This is the minimum apparent velocity to be expected 
+        for a plane wave arriving at the fibre, in units of km/s. Typically, one might set this 
+        to the minimum S-wave velocity expected. Default is 1 km/s.
 
     Returns
     -------
@@ -118,7 +126,8 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
         st += read_das_h5(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
-                        notch_freqs=notch_freqs, notch_bw=notch_bw)
+                        notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
+                        semblance_v_app_min=semblance_stack)
     st = util.merge_stream(st)
 
     return st
@@ -143,7 +152,8 @@ def _get_das_starttime_from_fname(das_fname, das_data_fmt):
 
 def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", station_prefix="D", 
                 spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
-                apply_notch_filter=False, notch_freqs=[], notch_bw=2.5):
+                apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
+                semblance_v_app_min=1.0):
     """Function to read in single das h5 file and output as obspy stream object."""
     # Get start time of data:
     data_and_headers = load_das_h5.load_file(das_fname)
@@ -181,6 +191,14 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
         print('Applying notch filter/s')
         for f_notch in notch_freqs:
             data = notch_filter(data, fs, f_notch, notch_bw, filt_axis=0)
+
+    # Perform semblance stack, if decimating data and semblance stacking is specified:
+    if not spatial_down_samp_factor==1:
+        if semblance_stack:
+            win_len = int(0.5*fs) # Set window length to 1/2 a second
+            max_inter_ch_t_shift = int(np.ceil(channel_spacing / (semblance_v_app_min * 1000))) # (This should be based 
+            # on slowest apparent velocity, i.e. dx/v_app, in samples)
+            data = semblance_stack_all(data, win_len, spatial_down_samp_factor, max_inter_ch_t_shift=max_inter_ch_t_shift)
     
     # Loop over das channels to save:
     st = Stream()
@@ -317,3 +335,47 @@ def notch_filter(data, fs, f_notch, bw, filt_axis=-1):
     # Apply filter (zero phase):
     data_filt = signal.filtfilt(b, a, data, axis=filt_axis)
     return data_filt
+
+
+def semblance(data, max_inter_ch_t_shift=2):
+    """Calculates semblance values for given window and shift.
+    Shift is applied relative to centre channel. Data should be 
+    of shape (time, space).
+    Note: Shifts here are relative to first trace, not centre trace."""
+    n_ch = data.shape[1]
+    t_shifts = np.arange(-max_inter_ch_t_shift,max_inter_ch_t_shift+1, dtype=int)
+
+    # Set initial values for semblance max. search:
+    semb_max = 0.
+    data_stacked = np.sum(data, axis=1) / n_ch
+    # shifts_max = np.zeros(len(t_shifts), dtype=int)
+    
+    # Roll each channel in turn, finding max. semblance and keeping match:
+    # (Note: Shifts here are relative to first trace, not centre trace)
+    for ch in range(1,n_ch):
+        for t_shift in t_shifts:
+            # Time shift next channel:
+            data[:,ch] = np.roll(data[:,ch], t_shift, axis=0)
+            # Calculate current semblance:
+            semb_curr = (1/n_ch) * np.sum(np.sum(data, axis=1)**2) / np.sum(np.sum(data**2, axis=1))
+            # And update if semblance is a maximum:
+            if semb_curr > semb_max:
+                semb_max = semb_curr.copy()
+                data_stacked = np.sum(data, axis=1) / n_ch
+                # shifts_max[ch] = t_shift
+    
+    return data_stacked
+
+
+def semblance_stack_all(data, win_len, ch_dec_fac, max_inter_ch_t_shift=2):
+    """Function to perform semblance stacking on all das data, given some windows."""
+    for ch_start in range(0, data.shape[0]-ch_dec_fac, ch_dec_fac):
+        for win_start in range(0, data.shape[0]-win_len, win_len):
+            data_stacked = semblance(data[win_start:win_start+win_len,ch_start:ch_start+ch_dec_fac], 
+                                        max_inter_ch_t_shift=max_inter_ch_t_shift)
+            # And append data, based on whether at end or not:
+            fill_dim = data[win_start:win_start+win_len,ch_start:ch_start+ch_dec_fac].shape[1]
+            data[win_start:win_start+win_len,ch_start:ch_start+ch_dec_fac] = np.repeat(data_stacked, 
+                                                        fill_dim, axis=0).reshape(win_len, fill_dim)
+    del data_stacked 
+    return data

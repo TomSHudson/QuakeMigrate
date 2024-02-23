@@ -132,6 +132,14 @@ class Archive:
         If True, applies a notch filter, typically applied to remove generator noise. 
         Default is False. If specified, should also specify notch_freqs (=[]) and  
         notch_bw (=2.5).
+    semblance_stack : bool, optional
+        If True and das data is to be spatially downsampled, then will downsample das data, 
+        but stacking using semblance based stacking. Default is not to perform semblance 
+        stacking, as not particularly computationally efficient.
+    semblance_v_app_min : float, optional
+        Only used if semblance_stack=True. This is the minimum apparent velocity to be expected 
+        for a plane wave arriving at the fibre, in units of km/s. Typically, one might set this 
+        to the minimum S-wave velocity expected. Default is 1 km/s.
 
     Methods
     -------
@@ -182,7 +190,8 @@ class Archive:
         self.apply_notch_filter = kwargs.get("apply_notch_filter", False)
         self.notch_freqs = kwargs.get("notch_freqs", [])
         self.notch_bw = kwargs.get("notch_bw", 2.5)
-
+        self.semblance_stack = kwargs.get("semblance_stack", False)
+        self.semblance_v_app_min = kwargs.get("semblance_v_app_min", 1.0)
 
     def __str__(self, response_only=False):
         """
@@ -367,7 +376,9 @@ class Archive:
                             spatial_down_samp_factor=self.spatial_down_samp_factor,
                             fk_filter_params=self.fk_filter_params, 
                             apply_notch_filter=self.apply_notch_filter, 
-                            notch_freqs=self.notch_freqs, notch_bw=self.notch_bw)
+                            notch_freqs=self.notch_freqs, notch_bw=self.notch_bw, 
+                            semblance_stack=self.semblance_stack, 
+                            semblance_v_app_min=self.semblance_v_app_min)
             except ValueError:
                 raise util.ArchiveEmptyException
 
