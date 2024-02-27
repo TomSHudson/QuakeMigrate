@@ -140,6 +140,9 @@ class Archive:
         Only used if semblance_stack=True. This is the minimum apparent velocity to be expected 
         for a plane wave arriving at the fibre, in units of km/s. Typically, one might set this 
         to the minimum S-wave velocity expected. Default is 1 km/s.
+    convert_strainrate_to_vel : bool, optional
+        If True, will convert das strain-rate data to velocity. Note, that if strain data is 
+        passed, then will instead convert to displacement. Default is False.
 
     Methods
     -------
@@ -192,6 +195,7 @@ class Archive:
         self.notch_bw = kwargs.get("notch_bw", 2.5)
         self.semblance_stack = kwargs.get("semblance_stack", False)
         self.semblance_v_app_min = kwargs.get("semblance_v_app_min", 1.0)
+        self.convert_strainrate_to_vel = kwargs.get("convert_strainrate_to_vel", False)
 
     def __str__(self, response_only=False):
         """
@@ -378,7 +382,8 @@ class Archive:
                             apply_notch_filter=self.apply_notch_filter, 
                             notch_freqs=self.notch_freqs, notch_bw=self.notch_bw, 
                             semblance_stack=self.semblance_stack, 
-                            semblance_v_app_min=self.semblance_v_app_min)
+                            semblance_v_app_min=self.semblance_v_app_min,
+                            convert_strainrate_to_vel=self.convert_strainrate_to_vel)
             except ValueError:
                 raise util.ArchiveEmptyException
 
@@ -407,7 +412,7 @@ class Archive:
                 tr.trim(starttime=starttime, endtime=endtime, nearest_sample=True)
                 if not bool(tr):
                     st.remove(tr)
-
+        
         # Test if the stream is completely empty
         # (see __nonzero__ for `obspy.Stream` object)
         if not bool(st):
@@ -416,13 +421,8 @@ class Archive:
         # Add cleaned stream to `waveforms`
         data.waveforms = st
 
-
-
-
-        
-
-
         return data
+
 
     def _load_from_path(self, starttime, endtime):
         """

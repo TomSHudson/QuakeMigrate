@@ -15,7 +15,7 @@ import logging
 import pathlib
 import glob 
 import numpy as np 
-from scipy import ndimage, signal
+from scipy import ndimage, signal, integrate
 from obspy import read, Stream, Trace, UTCDateTime
 import quakemigrate.util as util
 import quakemigrate.io.dasio.load_das_h5 as load_das_h5
@@ -24,7 +24,8 @@ import quakemigrate.io.dasio.load_das_h5 as load_das_h5
 def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, post_pad=0.0, 
             first_last_das_channels=[0,-1], duplicate_das_comps=True, station_prefix="D", 
             spatial_down_samp_factor=1, fk_filter_params={}, apply_notch_filter=False, 
-            notch_freqs=[], notch_bw=2.5, semblance_stack=False, semblance_v_app_min=1.0):
+            notch_freqs=[], notch_bw=2.5, semblance_stack=False, semblance_v_app_min=1.0,
+            convert_strainrate_to_vel=False):
     """
     Read in das data for a particular time period, and output to obspy stream.
 
@@ -86,6 +87,9 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
         Only used if semblance_stack=True. This is the minimum apparent velocity to be expected 
         for a plane wave arriving at the fibre, in units of km/s. Typically, one might set this 
         to the minimum S-wave velocity expected. Default is 1 km/s.
+    convert_strainrate_to_vel : bool, optional
+        If True, will convert das strain-rate data to velocity. Note, that if strain data is 
+        passed, then will instead convert to displacement. Default is False.
 
     Returns
     -------
@@ -127,7 +131,7 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
-                        semblance_v_app_min=semblance_stack)
+                        semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel)
     st = util.merge_stream(st)
 
     return st
@@ -153,7 +157,7 @@ def _get_das_starttime_from_fname(das_fname, das_data_fmt):
 def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", station_prefix="D", 
                 spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
                 apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
-                semblance_v_app_min=1.0):
+                semblance_v_app_min=1.0, convert_strainrate_to_vel=False):
     """Function to read in single das h5 file and output as obspy stream object."""
     # Get start time of data:
     data_and_headers = load_das_h5.load_file(das_fname)
@@ -192,6 +196,11 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
         for f_notch in notch_freqs:
             data = notch_filter(data, fs, f_notch, notch_bw, filt_axis=0)
 
+    # Convert data to velocity, if specified:
+    if convert_strainrate_to_vel:
+        print("Converting das strain-rate to velocity.")
+        data = strainrate2vel(data, headers)
+    
     # Perform semblance stack, if decimating data and semblance stacking is specified:
     if not spatial_down_samp_factor==1:
         if semblance_stack:
@@ -291,34 +300,6 @@ def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, small_
     imagep = np.fft.ifft2(ftimagep)
     imagep = imagep.real
     imagep = imagep.T
-    
-    # Plot the filter, if specified:
-    if plot==True:
-        # Plots the filter, with area remove greyed out
-        fig, ax = plt.subplots(nrows=3, sharex=True, figsize=[4,8])
-        img1 = ax[0].imshow(abs(fftdata), interpolation='bilinear',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],aspect='auto')
-        # img1.set_clim(-5,5)
-        img1 = ax[0].imshow(abs(blurred_mask-1),cmap='Greys',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],alpha=0.2,aspect='auto')
-        ax[0].set_xlabel('Frequency (Hz)')
-        ax[0].set_ylabel('Wavenumber (1/m)')
-        ax[0].set_title("fk-filter, fk domain")
-
-        # Plots second, app velocity filter, if specified:
-        img1 = ax[1].imshow(abs(fftdata), interpolation='bilinear',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],aspect='auto')
-        ax[1].set_xlabel('Frequency (Hz)')
-        ax[1].set_ylabel('Wavenumber (1/m)')
-        ax[1].set_title("$v_{app}$ filter, fk domain")
-        if not v_app_filts==None:
-            img1 = ax[1].imshow(abs(blurred_app_v_mask-1),cmap='Greys',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],alpha=0.2,aspect='auto')
-
-        # Plots final removed data:
-        img1 = ax[2].imshow(abs(np.fft.fftshift(ftimagep)), interpolation='bilinear',extent=[-fs/2,fs/2,-1/(2*ch_space),1/(2*ch_space)],aspect='auto')
-        ax[2].set_xlabel('Frequency (Hz)')
-        ax[2].set_ylabel('Wavenumber (1/m)')
-        ax[2].set_title("Final data, fk domain")
-        # plt.xlim(-200,200)
-        # plt.ylim(-0.2,0.2)
-        plt.show()
 
     return imagep
     
@@ -386,3 +367,114 @@ def semblance_stack_all(data, win_len, ch_dec_fac, max_inter_ch_t_shift=2):
                                                         fill_dim, axis=0).reshape(win_len, fill_dim)
     del data_stacked 
     return data
+
+
+def _direct_integration(twoD_data_arr, GL=1, dx=1, axis=0):
+    """Function to perform direct integration of <data_arr> along a particular axis. Note that detrends data, to remove drift.
+    Note: Only takes 2D data."""
+    # And perform integration
+    twoD_data_arr_int = twoD_data_arr.copy()
+    if axis == 0:
+        for i in range(twoD_data_arr.shape[1]):
+            y = twoD_data_arr[:,i]
+            y = y - np.mean(y) # detrend data
+            y_int = integrate.cumtrapz(y, dx=dx)
+            y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            twoD_data_arr_int[:,i] = y_int - np.mean(y_int) # And detrend data
+    else:
+        for i in range(twoD_data_arr.shape[0]):
+            y = twoD_data_arr[i,:]
+            y = y - np.mean(y) # detrend data
+            y_int = integrate.cumtrapz(y, dx=dx)
+            y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            twoD_data_arr_int[i,:] = y_int - np.mean(y_int) # And detrend data
+    return twoD_data_arr_int
+
+
+def strainrate2vel(data, headers, fk_filter_params=None, 
+                    bp_filter_params=None, notch_filter_params=None, verbosity=0):
+    """
+    Function to calculate strain rate from data.
+
+    Parameters
+    ----------
+    data, headers : 
+        H5 data and headers, in ETH SWP format.
+    
+    first_ch : int
+        The first channel to load. Default = 0.
+
+    last_ch : int 
+        The last channel to load. Default = None, which loads all channels.
+
+    first_s : int
+        The first time sample to load. Defualt = 0.
+
+    last_s : int
+        The last time sample to load. Default = None, which loads all 
+        channels.
+
+    fk_filter_params : dict
+        Dictionary containing fk filter parameters. Will only apply 
+        fk-filter if specified. Example format of dictionary is:
+        fk_filter_params['wavenumber'] = 0.04
+        fk_filter_params['max_freq'] = 100. (In Hz)
+        Default is None, i.e. no filter applied.
+
+    bp_filter_params : dict
+        Dictionary containing bandpass filter parameters. Will only apply 
+        bandpass filter if specified. Example format of dictionary is:
+        bp_filter_params['filter_freqs'] = [1.0, 150.0] (in Hz)
+        Default is None, i.e. no filter applied.
+
+    notch_filter_params : dict
+        Dictionary containing notch filter parameters. Will only apply 
+        notch filter if specified. Example format of dictionary is:
+        notch_filter_params['notch_freqs'] = [33.0, 66.0] (in Hz)
+        notch_filter_params['notch_bw'] = 2.5 (in Hz)
+        Default is None, i.e. no filter applied.
+
+    Returns
+    -------
+    vel_data : np array
+        Array containing DAS data converted to velocity from <tdms> data 
+        input. Shape is (time_samples, das_channels), as in original tdms 
+        data format.
+
+    """
+    # 1. Get data and properties:
+    strain_rate_data = data - np.mean(data) #data[first_s:last_s, first_ch:last_ch] - np.mean(data[first_s:last_s, first_ch:last_ch]) # Demean data
+    fs = headers['fs']
+    dx = headers['dx']
+    GL = headers['gauge']
+
+    # 2. Filter data:
+    # fk filter params:
+    if fk_filter_params:
+        strain_rate_data = fk_filter(strain_rate_data, fs, dx, fk_filter_params['wavenumber'], 
+                                        fk_filter_params['max_freq'], plot=False)
+    if bp_filter_params:
+        strain_rate_data = twoD_bandpass_filter(strain_rate_data, bp_filter_params['filter_freqs'][0], 
+                                        bp_filter_params['filter_freqs'][1], fs, order=4, axis=0)
+    if notch_filter_params:
+        for f_notch in notch_filter_params['notch_freqs']:
+            strain_rate_data = notch_filter(strain_rate_data, fs, f_notch, notch_filter_params['notch_bw'], 
+                                            filt_axis=0)
+
+    # 3. Convert strain-rate to velocity:
+    # via direct integration method:
+    # (Integrate data spatially):
+    vel_data = _direct_integration(strain_rate_data, GL=GL, dx=dx, axis=1)
+    vel_data = vel_data / GL # To correct for gauge length effect (Don't need to apply as integrating over each 
+    #                           spatial sample rather than each gauge length (?))
+
+    # 4. And perform fk filter to remove infinite apparent velocity spatial integration noise:
+    max_wavenum = 1. / dx
+    max_freq = fs / 2.
+    fibre_len = float(strain_rate_data.shape[1]) * dx
+    small_wavenumbers_filt_range = [-4./fibre_len, 4./fibre_len] # (4 is an empirically derived factor, determining 
+    #                                                           width of zero app freq. filter. Could be less or more, 
+    #                                                           if datasets vary).
+    vel_data = fk_filter(vel_data, fs, dx, max_wavenum, max_freq, small_wavenumbers_filt_range=small_wavenumbers_filt_range)
+
+    return vel_data
