@@ -235,7 +235,7 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
     return st 
 
 
-def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, plot=False):
+def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, small_wavenumbers_filt_range=None, plot=False):
     """FK filter for a 2D DAS numpy array. Returns a filtered image.
     Originally created by Antony Butcher.
     data - 2D array to filter. Data must be of shape (time_samp, spatial_samp). (np array)
@@ -244,6 +244,7 @@ def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, plot=F
     wavenumber - Wavenumber for fk filter. (float)
     max_freq - Maximum frequency for fk filter, in Hz. (float)
     v_app_filts - If specified, will remove these specific apparent velocities (w/k). (list of floats)
+    small_wavenumbers_filt_range - If specified, will remove wavenumbers between this range
     """
     # Detrend by removing the mean 
     data=data-np.mean(data)
@@ -265,7 +266,6 @@ def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, plot=F
     # Apply the mask to the data
     ftimagep = fftdata * blurred_mask
     
-
     # Define and apply apparent velocity mask, if specifed:
     dk = 2*np.abs(wavenums[1] - wavenums[0])
     df = 2*np.abs(freqs[1] - freqs[0])
@@ -276,6 +276,13 @@ def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, plot=F
             x=app_v_mask*1.
             blurred_app_v_mask = ndimage.gaussian_filter(x, sigma=1)
             ftimagep = ftimagep * blurred_app_v_mask
+
+    # Remove small wavenumbers, if specifed:
+    if not small_wavenumbers_filt_range==None:
+        small_k_mask = np.logical_or(wavenumsgrid<=small_wavenumbers_filt_range[0], wavenumsgrid>=small_wavenumbers_filt_range[1])
+        x=small_k_mask*1.
+        blurred_small_k_mask = ndimage.gaussian_filter(x, sigma=1)
+        ftimagep = ftimagep * blurred_small_k_mask
 
     # Shift the ifft:
     ftimagep = np.fft.ifftshift(ftimagep)
