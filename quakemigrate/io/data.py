@@ -183,7 +183,9 @@ class Archive:
             "remove_full_response", False
         )
         # DAS data read parameters:
-        self.das_archive_path = pathlib.Path(kwargs.get("das_archive_path", None))
+        self.das_archive_path = kwargs.get("das_archive_path", None)
+        if self.das_archive_path:
+            self.das_archive_path = pathlib.Path(self.das_archive_path)
         self.das_data_fmt = kwargs.get("das_data_fmt", "h5")
         self.first_last_das_channels = kwargs.get("first_last_das_channels", [0,-1])
         self.duplicate_das_comps = kwargs.get("duplicate_das_comps", True)
