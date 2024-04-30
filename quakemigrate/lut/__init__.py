@@ -14,7 +14,7 @@ traveltime lookup tables used in QuakeMigrate.
 import pyproj
 
 from .create_lut import compute_traveltimes, read_nlloc  # NOQA
-from .create_das_sens_lut import compute_das_sensitivity
+from .das.create_das_sens_lut import compute_das_sensitivity  # NOQA
 from .lut import LUT  # NOQA
 
 
