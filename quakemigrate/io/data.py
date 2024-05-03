@@ -101,10 +101,10 @@ class Archive:
         are supported. <das_data_fmt> is specified as another attribute of Archive. 
         Default is das_archive_path = None, resulting in no das data being included in 
         the analysis.
-    das_data_fmt : str, optional
+    das_data_fmt : str
         If das data is included (i.e. if <das_archive_path> is specified), then this is 
-        the das format to be read. Currently, the only supported format is h5, but it 
-        is relatively trivial to support other formats in the future (contact the 
+        the das format to be read. Currently, the only supported formats are h5 and sgy, 
+        but it is relatively trivial to support other formats in the future (contact the 
         developers or fork repository). Default is h5.
     first_last_das_channels : list of 2x ints, optional
         If specified, selects only certain DAS channels along the fibre, from 
@@ -143,6 +143,12 @@ class Archive:
     convert_strainrate_to_vel : bool, optional
         If True, will convert das strain-rate data to velocity. Note, that if strain data is 
         passed, then will instead convert to displacement. Default is False.
+    channel_spacing : float, optional
+        Used if data format is SEGY (das_data_fmt = sgy). Channel spacing of DAS data in metres.
+        Default is None. Must be specified if data format is SEGY.
+    gauge_length : float, optional
+        Used if data format is SEGY (das_data_fmt = sgy). Gauge length of DAS data in metres.
+        Default is None. Must be specified if data format is SEGY.
 
     Methods
     -------
@@ -198,6 +204,9 @@ class Archive:
         self.semblance_stack = kwargs.get("semblance_stack", False)
         self.semblance_v_app_min = kwargs.get("semblance_v_app_min", 1.0)
         self.convert_strainrate_to_vel = kwargs.get("convert_strainrate_to_vel", False)
+        self.channel_spacing = kwargs.get("channel_spacing", None)
+        self.gauge_length = kwargs.get("gauge_length", None)
+
 
     def __str__(self, response_only=False):
         """
@@ -385,7 +394,9 @@ class Archive:
                             notch_freqs=self.notch_freqs, notch_bw=self.notch_bw, 
                             semblance_stack=self.semblance_stack, 
                             semblance_v_app_min=self.semblance_v_app_min,
-                            convert_strainrate_to_vel=self.convert_strainrate_to_vel)
+                            convert_strainrate_to_vel=self.convert_strainrate_to_vel,
+                            channel_spacing=self.channel_spacing,
+                            gauge_length=self.gauge_length)
             except ValueError:
                 raise util.ArchiveEmptyException
 

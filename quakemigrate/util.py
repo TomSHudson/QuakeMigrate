@@ -1002,3 +1002,28 @@ class InvalidPickThresholdMethodException(Exception):
 
     def __init__(self):
         super().__init__("Only 'percentile' or 'MAD' thresholds are supported.")
+
+
+class DASSEGYNoChSpacSpecException(Exception):
+    """
+    Custom exception to handle case when the user has not specified <channel_spacing> 
+    when reading DAS data in a format that requires it to be explicitly specified.
+    """
+
+    def __init__(self):
+        super().__init__("Specified DAS data format requires <channel_spacing> to be specfied.")
+
+
+class DASSEGYNoGLException(Exception):
+    """
+    Custom exception to handle case when the user has not specified <gauge_length> 
+    when reading DAS data in a format that requires it to be explicitly specified.
+    """
+
+    def __init__(self):
+        super().__init__("Specified DAS data format requires <gauge_length> to be specfied.")
+
+
+
+
+

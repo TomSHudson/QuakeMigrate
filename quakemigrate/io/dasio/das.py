@@ -25,7 +25,7 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
             first_last_das_channels=[0,-1], duplicate_das_comps=True, station_prefix="D", 
             spatial_down_samp_factor=1, fk_filter_params={}, apply_notch_filter=False, 
             notch_freqs=[], notch_bw=2.5, semblance_stack=False, semblance_v_app_min=1.0,
-            convert_strainrate_to_vel=False):
+            convert_strainrate_to_vel=False, channel_spacing=None, gauge_length=None):
     """
     Read in das data for a particular time period, and output to obspy stream.
 
@@ -41,8 +41,8 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
         the analysis.
     das_data_fmt : str
         If das data is included (i.e. if <das_archive_path> is specified), then this is 
-        the das format to be read. Currently, the only supported format is h5, but it 
-        is relatively trivial to support other formats in the future (contact the 
+        the das format to be read. Currently, the only supported formats are h5 and sgy, 
+        but it is relatively trivial to support other formats in the future (contact the 
         developers or fork repository). Default is h5.
     starttime : `obspy.UTCDateTime` object
         Timestamp from which to read waveform data.
@@ -90,6 +90,12 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
     convert_strainrate_to_vel : bool, optional
         If True, will convert das strain-rate data to velocity. Note, that if strain data is 
         passed, then will instead convert to displacement. Default is False.
+    channel_spacing : float, optional
+        Used if data format is SEGY (das_data_fmt = sgy). Channel spacing of DAS data in metres.
+        Default is None. Must be specified if data format is SEGY.
+    gauge_length : float, optional
+        Used if data format is SEGY (das_data_fmt = sgy). Gauge length of DAS data in metres.
+        Default is None. Must be specified if data format is SEGY.
 
     Returns
     -------
@@ -127,11 +133,19 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
     # And read in streams for each das file:
     st = Stream()
     for das_fname in das_fnames_to_read:
-        st += read_das_h5(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
+        if das_data_fmt == "h5":
+            st += read_das_h5(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
                         semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel)
+        elif das_data_fmt == "sgy":
+            st += read_das_segy(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
+                        spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
+                        duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
+                        notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
+                        semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel,
+                        channel_spacing=channel_spacing, gauge_length=gauge_length)
     st = util.merge_stream(st)
 
     return st
@@ -141,8 +155,9 @@ def _get_das_starttime_from_fname(das_fname, das_data_fmt):
     """Function to get das starttime as UTCDateTime object from path object."""
     das_fname_tmp = str(pathlib.PurePath(das_fname).parts[-1])
     str_tmp = das_fname_tmp.split("."+das_data_fmt)[0]
-    das_f_starttime_str = str_tmp.split("UTC_")[-1]
-    das_f_starttime = UTCDateTime(year=int(das_f_starttime_str[0:4]), 
+    if das_data_fmt == "h5":
+        das_f_starttime_str = str_tmp.split("UTC_")[-1]
+        das_f_starttime = UTCDateTime(year=int(das_f_starttime_str[0:4]), 
                                     month=int(das_f_starttime_str[4:6]),
                                     day=int(das_f_starttime_str[6:8]),
                                     hour=int(das_f_starttime_str[9:11]),
@@ -150,8 +165,15 @@ def _get_das_starttime_from_fname(das_fname, das_data_fmt):
                                     second=int(das_f_starttime_str[13:15]),
                                     microsecond=int((10**6) * (10**(-1 * len(das_f_starttime_str[16:]))) 
                                                 * int(das_f_starttime_str[16:])))
+    elif das_data_fmt == "sgy":
+        str_tmp = str_tmp.split("_UTC")[0]
+        str_tmp = str_tmp.split("decimator_")[-1]
+        str_tmp = str_tmp.replace("_", "T")
+        das_f_starttime_str = str_tmp.replace(".", ":")
+        das_f_starttime = UTCDateTime(das_f_starttime_str)
+    else:
+        print("Error: <das_data_fmt> =", das_data_fmt, "not supported.")
     return das_f_starttime
-
 
 
 def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", station_prefix="D", 
@@ -242,6 +264,107 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
     del data_and_headers, headers, data 
 
     return st 
+
+
+def read_das_segy(das_fname, first_last_das_channels=[0,-1], network_code="AA", station_prefix="D", 
+                spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
+                apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
+                semblance_v_app_min=1.0, channel_spacing=None, gauge_length=None, 
+                convert_strainrate_to_vel=False):
+    """Function to read in single das h5 file and output as obspy stream object."""
+    # Check essential inputs are specified:
+    if channel_spacing == None:
+        raise util.DASSEGYNoChSpacSpecException
+    if gauge_length == None:
+        raise util.DASSEGYNoGLException
+
+    # Get start time of data:
+    st_in = read(das_fname, format="SEGY")
+    das_start = st_in[0].stats.starttime
+
+    # Create station labels:
+    # (based on distance along fibre)
+    end_channel = first_last_das_channels[1] 
+    if end_channel == -1:
+        end_channel = len(st_in)
+    das_station_idxs = np.arange(first_last_das_channels[0], end_channel, int(spatial_down_samp_factor), dtype=int)
+    das_station_labels = []
+    for idx in das_station_idxs:
+        das_station_labels.append(station_prefix+str(round(idx*channel_spacing)).zfill(4))
+
+    # And process data:
+    starttime_curr = das_start
+    fs = st_in[0].stats.sampling_rate
+    headers = {}
+    headers['fs'] = fs
+    headers['dx'] = channel_spacing
+    headers['gauge'] = gauge_length
+
+    # Create 2D das data object:
+    data = np.zeros((len(st_in[0].data), len(st_in))) # (data of shape (time_samp, spatial_samp))
+    for i in range(len(st_in)):
+        data[:,i] = st_in[i].data
+    del st_in
+
+    # Filter data:
+    # Apply fk filter:
+    if len(list(fk_filter_params.keys())) > 0:
+        print('Applying fk filter')
+        data = fk_filter(data, fs, channel_spacing, fk_filter_params['wavenumber'], fk_filter_params['max_freq'], 
+                        v_app_filts=fk_filter_params['v_app_filts'])
+    # Apply notch filter:
+    if apply_notch_filter:
+        print('Applying notch filter/s')
+        for f_notch in notch_freqs:
+            data = notch_filter(data, fs, f_notch, notch_bw, filt_axis=0)
+
+    # Convert data to velocity, if specified:
+    if convert_strainrate_to_vel:
+        print("Converting das strain-rate to velocity.")
+        data = strainrate2vel(data, headers)
+    
+    # Perform semblance stack, if decimating data and semblance stacking is specified:
+    if not spatial_down_samp_factor==1:
+        if semblance_stack:
+            win_len = int(0.5*fs) # Set window length to 1/2 a second
+            max_inter_ch_t_shift = int(np.ceil(channel_spacing / (semblance_v_app_min * 1000))) # (This should be based 
+            # on slowest apparent velocity, i.e. dx/v_app, in samples)
+            data = semblance_stack_all(data, win_len, spatial_down_samp_factor, max_inter_ch_t_shift=max_inter_ch_t_shift)
+    
+    # Loop over das channels to save:
+    st = Stream()
+    for i in range(len(das_station_labels)):
+        # Add data to stream:
+        # Create trace:
+        tr_to_add = Trace()
+        tr_to_add.stats.station = das_station_labels[i]
+        tr_to_add.data = data[:, das_station_idxs[i]].astype(float)
+        tr_to_add.stats.sampling_rate = fs
+        tr_to_add.stats.starttime = starttime_curr
+        tr_to_add.stats.channel = "EHN"
+        tr_to_add.stats.network = network_code
+        # Append trace to stream:
+        st.append(tr_to_add)
+
+        # Duplicate for Z and E components (arbitarily set equal to N comp),
+        # if specified:
+        if duplicate_Z_and_E:
+            tr_to_add_Z = tr_to_add.copy()
+            tr_to_add_Z.stats.channel = "EHZ"
+            st.append(tr_to_add_Z)
+            tr_to_add_E = tr_to_add.copy()
+            tr_to_add_E.stats.channel = "EHE"
+            st.append(tr_to_add_E)
+            del tr_to_add_Z, tr_to_add_E
+        
+        # Tidy memory:
+        del tr_to_add
+
+    # Tidy memory:
+    del headers, data 
+
+    return st 
+
 
 
 def fk_filter(data, fs, ch_space, wavenumber, max_freq, v_app_filts=None, small_wavenumbers_filt_range=None, plot=False):
