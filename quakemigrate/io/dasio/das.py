@@ -25,7 +25,8 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
             first_last_das_channels=[0,-1], duplicate_das_comps=True, station_prefix="D", 
             spatial_down_samp_factor=1, fk_filter_params={}, apply_notch_filter=False, 
             notch_freqs=[], notch_bw=2.5, semblance_stack=False, semblance_v_app_min=1.0,
-            convert_strainrate_to_vel=False, channel_spacing=None, gauge_length=None):
+            convert_strainrate_to_vel=False, strain_vs_strainrate="strainrate",
+            channel_spacing=None, gauge_length=None):
     """
     Read in das data for a particular time period, and output to obspy stream.
 
@@ -90,6 +91,10 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
     convert_strainrate_to_vel : bool, optional
         If True, will convert das strain-rate data to velocity. Note, that if strain data is 
         passed, then will instead convert to displacement. Default is False.
+    strain_vs_strainrate : str
+        Specify whether native das data is in strain-rate or strain. 
+        Default is <strain_vs_strainrate>=strainrate. Other option is 
+        <strain_vs_strainrate>=strain.
     channel_spacing : float, optional
         Used if data format is SEGY (das_data_fmt = sgy). Channel spacing of DAS data in metres.
         Default is None. Must be specified if data format is SEGY.
@@ -138,14 +143,16 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
-                        semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel)
+                        semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel,
+                        strain_vs_strainrate=strain_vs_strainrate)
         elif das_data_fmt == "sgy":
             st += read_das_segy(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
                         semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel,
-                        channel_spacing=channel_spacing, gauge_length=gauge_length)
+                        channel_spacing=channel_spacing, gauge_length=gauge_length, 
+                        strain_vs_strainrate=strain_vs_strainrate)
     st = util.merge_stream(st)
 
     return st
@@ -179,7 +186,8 @@ def _get_das_starttime_from_fname(das_fname, das_data_fmt):
 def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", station_prefix="D", 
                 spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
                 apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
-                semblance_v_app_min=1.0, convert_strainrate_to_vel=False):
+                semblance_v_app_min=1.0, convert_strainrate_to_vel=False, 
+                strain_vs_strainrate="strainrate"):
     """Function to read in single das h5 file and output as obspy stream object."""
     # Get start time of data:
     data_and_headers = load_das_h5.load_file(das_fname)
@@ -221,7 +229,7 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
     # Convert data to velocity, if specified:
     if convert_strainrate_to_vel:
         print("Converting das strain-rate to velocity.")
-        data = strainrate2vel(data, headers)
+        data = strainrate2vel(data, headers, strain_vs_strainrate=strain_vs_strainrate)
     
     # Perform semblance stack, if decimating data and semblance stacking is specified:
     if not spatial_down_samp_factor==1:
@@ -270,7 +278,7 @@ def read_das_segy(das_fname, first_last_das_channels=[0,-1], network_code="AA", 
                 spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
                 apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
                 semblance_v_app_min=1.0, channel_spacing=None, gauge_length=None, 
-                convert_strainrate_to_vel=False):
+                convert_strainrate_to_vel=False, strain_vs_strainrate="strainrate"):
     """Function to read in single das h5 file and output as obspy stream object."""
     # Check essential inputs are specified:
     if channel_spacing == None:
@@ -321,7 +329,7 @@ def read_das_segy(das_fname, first_last_das_channels=[0,-1], network_code="AA", 
     # Convert data to velocity, if specified:
     if convert_strainrate_to_vel:
         print("Converting das strain-rate to velocity.")
-        data = strainrate2vel(data, headers)
+        data = strainrate2vel(data, headers, strain_vs_strainrate=strain_vs_strainrate)
     
     # Perform semblance stack, if decimating data and semblance stacking is specified:
     if not spatial_down_samp_factor==1:
@@ -514,28 +522,21 @@ def _direct_integration(twoD_data_arr, GL=1, dx=1, axis=0):
     return twoD_data_arr_int
 
 
-def strainrate2vel(data, headers, fk_filter_params=None, 
-                    bp_filter_params=None, notch_filter_params=None, verbosity=0):
+def strainrate2vel(data, headers, strain_vs_strainrate='strainrate', 
+                   fk_filter_params=None, bp_filter_params=None, 
+                   notch_filter_params=None, verbosity=0):
     """
     Function to calculate strain rate from data.
 
     Parameters
     ----------
-    data, headers : 
+    data, headers : specific fmt
         H5 data and headers, in ETH SWP format.
-    
-    first_ch : int
-        The first channel to load. Default = 0.
 
-    last_ch : int 
-        The last channel to load. Default = None, which loads all channels.
-
-    first_s : int
-        The first time sample to load. Defualt = 0.
-
-    last_s : int
-        The last time sample to load. Default = None, which loads all 
-        channels.
+    strain_vs_strainrate : str
+        Specify whether native das data is in strain-rate or strain. 
+        Default is <strain_vs_strainrate>=strainrate. Other option is 
+        <strain_vs_strainrate>=strain.
 
     fk_filter_params : dict
         Dictionary containing fk filter parameters. Will only apply 
@@ -571,6 +572,14 @@ def strainrate2vel(data, headers, fk_filter_params=None,
     dx = headers['dx']
     GL = headers['gauge']
 
+    # 1.b. Check whether need to convert to strain-rate or not:
+    if strain_vs_strainrate == "strain":
+        # If native format is strain, then convert to strain-rate:
+        #(via time-differentiation)
+        dt = 1 / fs
+        strain_rate_data[0:-1,:] = (strain_rate_data[1:, :] - strain_rate_data[0:-1, :]) / dt
+        strain_rate_data[-1,:] = strain_rate_data[-2,:] # (Set last value, as cannot calculate)
+
     # 2. Filter data:
     # fk filter params:
     if fk_filter_params:
@@ -601,3 +610,6 @@ def strainrate2vel(data, headers, fk_filter_params=None,
     vel_data = fk_filter(vel_data, fs, dx, max_wavenum, max_freq, small_wavenumbers_filt_range=small_wavenumbers_filt_range)
 
     return vel_data
+
+
+

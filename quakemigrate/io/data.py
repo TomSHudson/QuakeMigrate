@@ -143,6 +143,10 @@ class Archive:
     convert_strainrate_to_vel : bool, optional
         If True, will convert das strain-rate data to velocity. Note, that if strain data is 
         passed, then will instead convert to displacement. Default is False.
+    strain_vs_strainrate : str
+        Specify whether native das data is in strain-rate or strain. 
+        Default is <strain_vs_strainrate>=strainrate. Other option is 
+        <strain_vs_strainrate>=strain.
     channel_spacing : float, optional
         Used if data format is SEGY (das_data_fmt = sgy). Channel spacing of DAS data in metres.
         Default is None. Must be specified if data format is SEGY.
@@ -204,6 +208,7 @@ class Archive:
         self.semblance_stack = kwargs.get("semblance_stack", False)
         self.semblance_v_app_min = kwargs.get("semblance_v_app_min", 1.0)
         self.convert_strainrate_to_vel = kwargs.get("convert_strainrate_to_vel", False)
+        self.strain_vs_strainrate = kwargs.get("strain_vs_strainrate", "strainrate")
         self.channel_spacing = kwargs.get("channel_spacing", None)
         self.gauge_length = kwargs.get("gauge_length", None)
 
@@ -395,6 +400,7 @@ class Archive:
                             semblance_stack=self.semblance_stack, 
                             semblance_v_app_min=self.semblance_v_app_min,
                             convert_strainrate_to_vel=self.convert_strainrate_to_vel,
+                            strain_vs_strainrate=self.strain_vs_strainrate,
                             channel_spacing=self.channel_spacing,
                             gauge_length=self.gauge_length)
             except ValueError:
