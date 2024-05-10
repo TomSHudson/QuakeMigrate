@@ -500,26 +500,82 @@ def semblance_stack_all(data, win_len, ch_dec_fac, max_inter_ch_t_shift=2):
     return data
 
 
-def _direct_integration(twoD_data_arr, GL=1, dx=1, axis=0):
+# def _direct_integration(twoD_data_arr, GL=1, dx=1, axis=0):
+#     """Function to perform direct integration of <data_arr> along a particular axis. Note that detrends data, to remove drift.
+#     Note: Only takes 2D data."""
+#     # And perform integration
+#     twoD_data_arr_int = twoD_data_arr.copy()
+#     if axis == 0:
+#         for i in range(twoD_data_arr.shape[1]):
+#             y = twoD_data_arr[:,i]
+#             y = y - np.mean(y) # detrend data
+#             y_int = integrate.cumtrapz(y, dx=dx)
+#             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+#             twoD_data_arr_int[:,i] = y_int - np.mean(y_int) # And detrend data
+#     else:
+#         for i in range(twoD_data_arr.shape[0]):
+#             y = twoD_data_arr[i,:]
+#             y = y - np.mean(y) # detrend data
+#             y_int = integrate.cumtrapz(y, dx=dx)
+#             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+#             twoD_data_arr_int[i,:] = y_int - np.mean(y_int) # And detrend data
+#     return twoD_data_arr_int
+
+
+def _direct_integration(twoD_data_arr, GL=None, dx=1, axis=0):
     """Function to perform direct integration of <data_arr> along a particular axis. Note that detrends data, to remove drift.
     Note: Only takes 2D data."""
     # And perform integration
     twoD_data_arr_int = twoD_data_arr.copy()
+    # if GL is None:
+    #     GL_moving_win = 1
+    # else:
+    #     GL_moving_win = round(GL/dx)
     if axis == 0:
         for i in range(twoD_data_arr.shape[1]):
             y = twoD_data_arr[:,i]
             y = y - np.mean(y) # detrend data
+            #--
             y_int = integrate.cumtrapz(y, dx=dx)
             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            #--
+            # y_int = dx * (y[:-1] + y[1:])/2.
+            # y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            # # Apply moving average to deal with gauge length (if specified):
+            # y_int = moving_sum(y_int, GL_moving_win) 
+            # y_int = np.append(np.ones(GL_moving_win-1)*y_int[0], y_int) # (and set first values, as not calculated otherwise)
+            #--
             twoD_data_arr_int[:,i] = y_int - np.mean(y_int) # And detrend data
     else:
         for i in range(twoD_data_arr.shape[0]):
             y = twoD_data_arr[i,:]
             y = y - np.mean(y) # detrend data
+            #--
             y_int = integrate.cumtrapz(y, dx=dx)
             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            #--
+            # y_int = dx * (y[:-1] + y[1:])/2.
+            # y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            # # Apply moving average to deal with gauge length (if specified):
+            # y_int = moving_sum(y_int, GL_moving_win) 
+            # y_int = np.append(np.ones(GL_moving_win-1)*y_int[0], y_int) # (and set first values, as not calculated otherwise)
+            #--
             twoD_data_arr_int[i,:] = y_int - np.mean(y_int) # And detrend data
     return twoD_data_arr_int
+
+
+def moving_average(x, w):
+    """Function to apply moving average.
+    x - array to process.
+    w - width of window."""
+    return np.convolve(x, np.ones(w), 'valid') / w
+
+
+def moving_sum(x, w):
+    """Function to apply moving average.
+    x - array to process.
+    w - width of window."""
+    return np.convolve(x, np.ones(w), 'valid')
 
 
 def strainrate2vel(data, headers, strain_vs_strainrate='strainrate', 
