@@ -153,6 +153,10 @@ class Archive:
     gauge_length : float, optional
         Used if data format is SEGY (das_data_fmt = sgy). Gauge length of DAS data in metres.
         Default is None. Must be specified if data format is SEGY.
+    linfibreapprox : bool
+        If True, applies a cummulative integration, which performs better for 
+        linear fibre geometries. Otherwise, will apply a simpler integration 
+        technique. Default is False.
 
     Methods
     -------
@@ -211,6 +215,7 @@ class Archive:
         self.strain_vs_strainrate = kwargs.get("strain_vs_strainrate", "strainrate")
         self.channel_spacing = kwargs.get("channel_spacing", None)
         self.gauge_length = kwargs.get("gauge_length", None)
+        self.linfibreapprox = kwargs.get("linfibreapprox", False)
 
 
     def __str__(self, response_only=False):
@@ -402,7 +407,8 @@ class Archive:
                             convert_strainrate_to_vel=self.convert_strainrate_to_vel,
                             strain_vs_strainrate=self.strain_vs_strainrate,
                             channel_spacing=self.channel_spacing,
-                            gauge_length=self.gauge_length)
+                            gauge_length=self.gauge_length,
+                            linfibreapprox=self.linfibreapprox)
             except ValueError:
                 raise util.ArchiveEmptyException
 

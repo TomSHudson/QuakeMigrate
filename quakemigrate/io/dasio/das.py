@@ -26,7 +26,7 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
             spatial_down_samp_factor=1, fk_filter_params={}, apply_notch_filter=False, 
             notch_freqs=[], notch_bw=2.5, semblance_stack=False, semblance_v_app_min=1.0,
             convert_strainrate_to_vel=False, strain_vs_strainrate="strainrate",
-            channel_spacing=None, gauge_length=None):
+            channel_spacing=None, gauge_length=None, linfibreapprox=False):
     """
     Read in das data for a particular time period, and output to obspy stream.
 
@@ -101,6 +101,10 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
     gauge_length : float, optional
         Used if data format is SEGY (das_data_fmt = sgy). Gauge length of DAS data in metres.
         Default is None. Must be specified if data format is SEGY.
+    linfibreapprox : bool
+        If True, applies a cummulative integration, which performs better for 
+        linear fibre geometries. Otherwise, will apply a simpler integration 
+        technique. Default is False.
 
     Returns
     -------
@@ -144,7 +148,7 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
                         semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel,
-                        strain_vs_strainrate=strain_vs_strainrate)
+                        strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
         elif das_data_fmt == "sgy":
             st += read_das_segy(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
@@ -152,7 +156,7 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
                         semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel,
                         channel_spacing=channel_spacing, gauge_length=gauge_length, 
-                        strain_vs_strainrate=strain_vs_strainrate)
+                        strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
     st = util.merge_stream(st)
 
     return st
@@ -187,7 +191,7 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
                 spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
                 apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
                 semblance_v_app_min=1.0, convert_strainrate_to_vel=False, 
-                strain_vs_strainrate="strainrate"):
+                strain_vs_strainrate="strainrate", linfibreapprox=False):
     """Function to read in single das h5 file and output as obspy stream object."""
     # Get start time of data:
     data_and_headers = load_das_h5.load_file(das_fname)
@@ -229,7 +233,7 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
     # Convert data to velocity, if specified:
     if convert_strainrate_to_vel:
         print("Converting das strain-rate to velocity.")
-        data = strainrate2vel(data, headers, strain_vs_strainrate=strain_vs_strainrate)
+        data = strainrate2vel(data, headers, strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
     
     # Perform semblance stack, if decimating data and semblance stacking is specified:
     if not spatial_down_samp_factor==1:
@@ -278,7 +282,8 @@ def read_das_segy(das_fname, first_last_das_channels=[0,-1], network_code="AA", 
                 spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
                 apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
                 semblance_v_app_min=1.0, channel_spacing=None, gauge_length=None, 
-                convert_strainrate_to_vel=False, strain_vs_strainrate="strainrate"):
+                convert_strainrate_to_vel=False, strain_vs_strainrate="strainrate", 
+                linfibreapprox=False):
     """Function to read in single das h5 file and output as obspy stream object."""
     # Check essential inputs are specified:
     if channel_spacing == None:
@@ -329,7 +334,7 @@ def read_das_segy(das_fname, first_last_das_channels=[0,-1], network_code="AA", 
     # Convert data to velocity, if specified:
     if convert_strainrate_to_vel:
         print("Converting das strain-rate to velocity.")
-        data = strainrate2vel(data, headers, strain_vs_strainrate=strain_vs_strainrate)
+        data = strainrate2vel(data, headers, strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
     
     # Perform semblance stack, if decimating data and semblance stacking is specified:
     if not spatial_down_samp_factor==1:
@@ -500,37 +505,12 @@ def semblance_stack_all(data, win_len, ch_dec_fac, max_inter_ch_t_shift=2):
     return data
 
 
-# def _direct_integration(twoD_data_arr, GL=1, dx=1, axis=0):
-#     """Function to perform direct integration of <data_arr> along a particular axis. Note that detrends data, to remove drift.
-#     Note: Only takes 2D data."""
-#     # And perform integration
-#     twoD_data_arr_int = twoD_data_arr.copy()
-#     if axis == 0:
-#         for i in range(twoD_data_arr.shape[1]):
-#             y = twoD_data_arr[:,i]
-#             y = y - np.mean(y) # detrend data
-#             y_int = integrate.cumtrapz(y, dx=dx)
-#             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
-#             twoD_data_arr_int[:,i] = y_int - np.mean(y_int) # And detrend data
-#     else:
-#         for i in range(twoD_data_arr.shape[0]):
-#             y = twoD_data_arr[i,:]
-#             y = y - np.mean(y) # detrend data
-#             y_int = integrate.cumtrapz(y, dx=dx)
-#             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
-#             twoD_data_arr_int[i,:] = y_int - np.mean(y_int) # And detrend data
-#     return twoD_data_arr_int
-
-
-def _direct_integration(twoD_data_arr, GL=None, dx=1, axis=0):
+def _direct_integration_linfibapprox(twoD_data_arr, GL=None, dx=1, axis=0):
     """Function to perform direct integration of <data_arr> along a particular axis. Note that detrends data, to remove drift.
-    Note: Only takes 2D data."""
+    Note: Only takes 2D data.
+    Here, cumtrapz is used for the integration, which is better for approx. linear fibre geometries."""
     # And perform integration
     twoD_data_arr_int = twoD_data_arr.copy()
-    # if GL is None:
-    #     GL_moving_win = 1
-    # else:
-    #     GL_moving_win = round(GL/dx)
     if axis == 0:
         for i in range(twoD_data_arr.shape[1]):
             y = twoD_data_arr[:,i]
@@ -538,12 +518,6 @@ def _direct_integration(twoD_data_arr, GL=None, dx=1, axis=0):
             #--
             y_int = integrate.cumtrapz(y, dx=dx)
             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
-            #--
-            # y_int = dx * (y[:-1] + y[1:])/2.
-            # y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
-            # # Apply moving average to deal with gauge length (if specified):
-            # y_int = moving_sum(y_int, GL_moving_win) 
-            # y_int = np.append(np.ones(GL_moving_win-1)*y_int[0], y_int) # (and set first values, as not calculated otherwise)
             #--
             twoD_data_arr_int[:,i] = y_int - np.mean(y_int) # And detrend data
     else:
@@ -554,11 +528,42 @@ def _direct_integration(twoD_data_arr, GL=None, dx=1, axis=0):
             y_int = integrate.cumtrapz(y, dx=dx)
             y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
             #--
-            # y_int = dx * (y[:-1] + y[1:])/2.
-            # y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
-            # # Apply moving average to deal with gauge length (if specified):
-            # y_int = moving_sum(y_int, GL_moving_win) 
-            # y_int = np.append(np.ones(GL_moving_win-1)*y_int[0], y_int) # (and set first values, as not calculated otherwise)
+            twoD_data_arr_int[i,:] = y_int - np.mean(y_int) # And detrend data
+    return twoD_data_arr_int
+
+
+def _direct_integration(twoD_data_arr, GL=None, dx=1, axis=0):
+    """Function to perform direct integration of <data_arr> along a particular axis. Note that detrends data, to remove drift.
+    Note: Only takes 2D data.
+    Here, simple integration used used, which is better for non-linear fibre geometries."""
+    # And perform integration
+    twoD_data_arr_int = twoD_data_arr.copy()
+    if GL is None:
+        GL_moving_win = 1
+    else:
+        GL_moving_win = round(GL/dx)
+    if axis == 0:
+        for i in range(twoD_data_arr.shape[1]):
+            y = twoD_data_arr[:,i]
+            y = y - np.mean(y) # detrend data
+            #--
+            y_int = dx * (y[:-1] + y[1:])/2.
+            y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            # Apply moving average to deal with gauge length (if specified):
+            y_int = moving_sum(y_int, GL_moving_win) 
+            y_int = np.append(np.ones(GL_moving_win-1)*y_int[0], y_int) # (and set first values, as not calculated otherwise)
+            #--
+            twoD_data_arr_int[:,i] = y_int - np.mean(y_int) # And detrend data
+    else:
+        for i in range(twoD_data_arr.shape[0]):
+            y = twoD_data_arr[i,:]
+            y = y - np.mean(y) # detrend data
+            #--
+            y_int = dx * (y[:-1] + y[1:])/2.
+            y_int = np.append(y_int, y_int[-1]) # (and set final value, as not calculated otherwise)
+            # Apply moving average to deal with gauge length (if specified):
+            y_int = moving_sum(y_int, GL_moving_win) 
+            y_int = np.append(np.ones(GL_moving_win-1)*y_int[0], y_int) # (and set first values, as not calculated otherwise)
             #--
             twoD_data_arr_int[i,:] = y_int - np.mean(y_int) # And detrend data
     return twoD_data_arr_int
@@ -579,6 +584,7 @@ def moving_sum(x, w):
 
 
 def strainrate2vel(data, headers, strain_vs_strainrate='strainrate', 
+                   linfibreapprox=False,
                    fk_filter_params=None, bp_filter_params=None, 
                    notch_filter_params=None, verbosity=0):
     """
@@ -593,6 +599,11 @@ def strainrate2vel(data, headers, strain_vs_strainrate='strainrate',
         Specify whether native das data is in strain-rate or strain. 
         Default is <strain_vs_strainrate>=strainrate. Other option is 
         <strain_vs_strainrate>=strain.
+
+    linfibreapprox : bool
+        If True, applies a cummulative integration, which performs better for 
+        linear fibre geometries. Otherwise, will apply a simpler integration 
+        technique. Default is False.
 
     fk_filter_params : dict
         Dictionary containing fk filter parameters. Will only apply 
@@ -652,7 +663,10 @@ def strainrate2vel(data, headers, strain_vs_strainrate='strainrate',
     # 3. Convert strain-rate to velocity:
     # via direct integration method:
     # (Integrate data spatially):
-    vel_data = _direct_integration(strain_rate_data, GL=GL, dx=dx, axis=1)
+    if linfibreapprox:
+        vel_data = _direct_integration_linfibapprox(strain_rate_data, GL=GL, dx=dx, axis=1)
+    else:
+        vel_data = _direct_integration(strain_rate_data, GL=GL, dx=dx, axis=1)
     vel_data = vel_data / GL # To correct for gauge length effect (Don't need to apply as integrating over each 
     #                           spatial sample rather than each gauge length (?))
 
