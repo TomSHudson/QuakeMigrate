@@ -90,8 +90,18 @@ def compute_das_sensitivity(
     # 1. Specify velocity grid:
     lut.grid_xyz
     ztmp = np.linspace(lut.grid_extent[0,2], lut.grid_extent[1,2]+lut.cell_size[2], lut.cell_count[2])
-    vmodel_oneD_P = np.interp(ztmp, lut.velocity_model['Depth'], lut.velocity_model['Vp'])
-    vmodel_oneD_S = np.interp(ztmp, lut.velocity_model['Depth'], lut.velocity_model['Vs'])
+    # Set velocity based on homogeneious or 1D (3D not yet supported):
+    try:
+        # If 1D:
+        vmodel_oneD_P = np.interp(ztmp, lut.velocity_model['Depth'], lut.velocity_model['Vp'])
+        vmodel_oneD_S = np.interp(ztmp, lut.velocity_model['Depth'], lut.velocity_model['Vs'])
+    except TypeError:
+        # If homogeneous:
+        vp_tmp = float(lut.velocity_model.split('=  ')[1].split(' m')[0])
+        vs_tmp = float(lut.velocity_model.split('=  ')[2].split(' m')[0])
+        vmodel_oneD_P = vp_tmp * np.ones(lut.grid_xyz[0].shape[2])
+        vmodel_oneD_S = vs_tmp * np.ones(lut.grid_xyz[0].shape[2])
+    # And populate 3D velocity grid accordingly:
     velocity_grid_P = np.zeros(lut.grid_xyz[0].shape)
     velocity_grid_S = np.zeros(lut.grid_xyz[0].shape)
     for i in range(lut.grid_xyz[0].shape[0]):
@@ -241,6 +251,14 @@ def _find_toa_grid_single_receiver(grid_xyz, node_spacing, velocity_grid, statio
     rcv[:,0] = grid_xyz[0].flatten()
     rcv[:,1] = grid_xyz[1].flatten()
     rcv[:,2] = grid_xyz[2].flatten()
+    # And add some padding for dealing with rounding errors in ray-tracing:
+    # (padding is 0.01 m)
+    rcv[:,0][rcv[:,0]==np.min(rcv[:,0])] = np.min(rcv[:,0]) + 1e-5
+    rcv[:,0][rcv[:,0]==np.max(rcv[:,0])] = np.max(rcv[:,0]) - 1e-5
+    rcv[:,1][rcv[:,1]==np.min(rcv[:,1])] = np.min(rcv[:,1]) + 1e-5
+    rcv[:,1][rcv[:,1]==np.max(rcv[:,1])] = np.max(rcv[:,1]) - 1e-5
+    rcv[:,2][rcv[:,2]==np.min(rcv[:,2])] = np.min(rcv[:,2]) + 1e-5
+    rcv[:,2][rcv[:,2]==np.max(rcv[:,2])] = np.max(rcv[:,2]) - 1e-5
 #     rcv = station_xyz.reshape((1,3))
 #     rcv = np.array([station_xyz, station_xyz]) # (two, to force ray-tracing to work for src and rcv numbers)
 #     nsrc = grid_xyz.shape[1] * grid_xyz.shape[2] * grid_xyz.shape[3]
@@ -249,7 +267,7 @@ def _find_toa_grid_single_receiver(grid_xyz, node_spacing, velocity_grid, statio
 #     src[:,1] = grid_xyz[1].flatten()
 #     src[:,2] = grid_xyz[2].flatten()
 #     print(src.shape, rcv.shape)
-    
+
     # Perform ray tracing:
     tt, rays = rtgrid.raytrace(src, rcv, 1./velocity_grid, return_rays=True)
     del tt, rtgrid, rcv
