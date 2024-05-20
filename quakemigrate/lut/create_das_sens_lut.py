@@ -252,21 +252,13 @@ def _find_toa_grid_single_receiver(grid_xyz, node_spacing, velocity_grid, statio
     rcv[:,1] = grid_xyz[1].flatten()
     rcv[:,2] = grid_xyz[2].flatten()
     # And add some padding for dealing with rounding errors in ray-tracing:
-    # (padding is 0.01 m)
-    rcv[:,0][rcv[:,0]==np.min(rcv[:,0])] = np.min(rcv[:,0]) + 1e-5
-    rcv[:,0][rcv[:,0]==np.max(rcv[:,0])] = np.max(rcv[:,0]) - 1e-5
-    rcv[:,1][rcv[:,1]==np.min(rcv[:,1])] = np.min(rcv[:,1]) + 1e-5
-    rcv[:,1][rcv[:,1]==np.max(rcv[:,1])] = np.max(rcv[:,1]) - 1e-5
-    rcv[:,2][rcv[:,2]==np.min(rcv[:,2])] = np.min(rcv[:,2]) + 1e-5
-    rcv[:,2][rcv[:,2]==np.max(rcv[:,2])] = np.max(rcv[:,2]) - 1e-5
-#     rcv = station_xyz.reshape((1,3))
-#     rcv = np.array([station_xyz, station_xyz]) # (two, to force ray-tracing to work for src and rcv numbers)
-#     nsrc = grid_xyz.shape[1] * grid_xyz.shape[2] * grid_xyz.shape[3]
-#     src = np.zeros((nsrc,3))
-#     src[:,0] = grid_xyz[0].flatten()
-#     src[:,1] = grid_xyz[1].flatten()
-#     src[:,2] = grid_xyz[2].flatten()
-#     print(src.shape, rcv.shape)
+    # (padding is 1 grid cell)
+    rcv[:,0][rcv[:,0]==np.min(rcv[:,0])] = np.min(rcv[:,0]) + node_spacing[0]
+    rcv[:,0][rcv[:,0]==np.max(rcv[:,0])] = np.max(rcv[:,0]) - node_spacing[0]
+    rcv[:,1][rcv[:,1]==np.min(rcv[:,1])] = np.min(rcv[:,1]) + node_spacing[1]
+    rcv[:,1][rcv[:,1]==np.max(rcv[:,1])] = np.max(rcv[:,1]) - node_spacing[1]
+    rcv[:,2][rcv[:,2]==np.min(rcv[:,2])] = np.min(rcv[:,2]) + node_spacing[2]
+    rcv[:,2][rcv[:,2]==np.max(rcv[:,2])] = np.max(rcv[:,2]) - node_spacing[2]
 
     # Perform ray tracing:
     tt, rays = rtgrid.raytrace(src, rcv, 1./velocity_grid, return_rays=True)
