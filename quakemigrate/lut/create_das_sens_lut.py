@@ -28,13 +28,16 @@ import quakemigrate.util as util
 from .lut import LUT
 
 
-
-
+def _find_nearest_val(array, value):
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return array[idx]
 
 def compute_das_sensitivity(
     lut,
     grid_spec,
     station_prefix="D",
+    strainrate_or_velocity="velocity",
     das_sens_lower_cutoff=0.1,
     write_out_das_sensitivities=False,
     save_file=None,
@@ -58,6 +61,10 @@ def compute_das_sensitivity(
         Station name prefix for das channels. das channels are then named with the 
         station prefix followed by an integer representing the distance along the fibre.
         Default is "D".
+    strainrate_or_velocity : str, optional
+        Specifies whether output sensitivity is for strain-rate or velocity. Default is 
+        velocity. One should be consistent with using the correct sensitivity for the 
+        correct measurement/conversion specified in detect/locate stages.
     das_sens_lower_cutoff : float, optional
         The value below which any lut nodes are deemed to be insensitive to P/S phases. 
         Default is 0.1, where sensitivity ranges from 0 to 1.
@@ -81,14 +88,7 @@ def compute_das_sensitivity(
 
     util.logger(pathlib.Path.cwd() / "logs" / "lut", log)
 
-    print("Warning: Currently implementation is for DAS VELOCITY SENSITIVITY, not DAS strain-rate sensitivity!")
-
-    # lut = LUT(**grid_spec, fraction_tt=fraction_tt)
-    # lut.station_data = stations
-    # lut.phases = phases
-
     # 1. Specify velocity grid:
-    lut.grid_xyz
     ztmp = np.linspace(lut.grid_extent[0,2], lut.grid_extent[1,2]+lut.cell_size[2], lut.cell_count[2])
     # Set velocity based on homogeneious or 1D (3D not yet supported):
     try:
@@ -150,9 +150,14 @@ def compute_das_sensitivity(
             phi2s_S = (np.pi/2.) - np.deg2rad(toas_S.flatten()) # (pi/2 - toa as phi2 is from horizontal (???)) $ TOA
 
             # And calculate sensitivity (with no frequency dependence or gauge-length effects):
-            P_sens_vel = np.abs(np.cos(phi1s - theta) * np.cos(phi2s_P))
-            SV_sens_vel = np.abs(np.cos(phi1s - theta) * np.sin(phi2s_S))
-            SH_sens_vel = np.abs(np.sin(phi1s - theta))
+            if strainrate_or_velocity == "velocity":
+                P_sens_vel = np.abs(np.cos(phi1s - theta) * np.cos(phi2s_P))
+                SV_sens_vel = np.abs(np.cos(phi1s - theta) * np.sin(phi2s_S))
+                SH_sens_vel = np.abs(np.sin(phi1s - theta))
+            else:
+                P_sens_vel = (np.cos(phi1s - theta) * np.cos(phi2s_P))**2
+                SV_sens_vel = np.abs((np.cos(phi1s - theta)**2) * np.sin(2*phi2s_S))
+                SH_sens_vel = np.abs(np.sin(2*(phi1s - theta)) * np.cos(phi2s_S))
             P_sens_vel = P_sens_vel.reshape(lut.grid_xyz[0].shape)
             SV_sens_vel = SV_sens_vel.reshape(lut.grid_xyz[0].shape)
             SH_sens_vel = SH_sens_vel.reshape(lut.grid_xyz[0].shape)
@@ -231,10 +236,40 @@ def _find_toa_grid_single_receiver(grid_xyz, node_spacing, velocity_grid, statio
             "method."
         )
 
+    # Pad grid, to remove any ray-tracing out of grid issues:
+    # (Note: Important that don't update grid_xyz, as that is used for defining sources/receivers)
+    # Pad in x, y and z:
+    n_cells_pad = 5
+    xyz = [grid_xyz[0][:,0,0], grid_xyz[1][0,:,0], grid_xyz[2][0,0,:]]
+    xyz_with_pad = []
+    # Loop over xyz:
+    for xyz_idx in range(3):
+        # Get pad labels:
+        x_prepad = np.min(xyz[xyz_idx]) - np.arange(node_spacing[xyz_idx],(n_cells_pad+1)*node_spacing[xyz_idx], node_spacing[xyz_idx])[::-1]
+        x_postpad = np.max(xyz[xyz_idx]) + np.arange(node_spacing[xyz_idx],(n_cells_pad+1)*node_spacing[xyz_idx], node_spacing[xyz_idx])
+        xyz_with_pad.append(np.concatenate((x_prepad, xyz[xyz_idx], x_postpad)))
+        # Pad velocity grid:
+        if xyz_idx == 0:
+            velocity_grid_prepad = velocity_grid[0,:,:].copy().reshape((1, velocity_grid.shape[1], velocity_grid.shape[2]))
+            velocity_grid_postpad = velocity_grid[-1,:,:].copy().reshape((1, velocity_grid.shape[1], velocity_grid.shape[2]))
+        elif xyz_idx == 1:
+            velocity_grid_prepad = velocity_grid[:,0,:].copy().reshape((velocity_grid.shape[0], 1, velocity_grid.shape[2]))
+            velocity_grid_postpad = velocity_grid[:,-1,:].copy().reshape((velocity_grid.shape[0], 1, velocity_grid.shape[2]))
+        elif xyz_idx == 2:
+            velocity_grid_prepad = velocity_grid[:,:,0].copy().reshape((velocity_grid.shape[0], velocity_grid.shape[1], 1))
+            velocity_grid_postpad = velocity_grid[:,:,-1].copy().reshape((velocity_grid.shape[0], velocity_grid.shape[1], 1))
+        for i in range(n_cells_pad):
+            if xyz_idx == 0:
+                velocity_grid = np.vstack((velocity_grid_prepad, velocity_grid, velocity_grid_postpad))
+            elif xyz_idx == 1:
+                velocity_grid = np.hstack((velocity_grid_prepad, velocity_grid, velocity_grid_postpad))
+            elif xyz_idx == 2:
+                velocity_grid = np.dstack((velocity_grid_prepad, velocity_grid, velocity_grid_postpad))
+
     # Create grid for ray-tracing:
-    x = grid_xyz[0][:,0,0]
-    y = grid_xyz[1][0,:,0]
-    z = grid_xyz[2][0,0,:]
+    x = xyz_with_pad[0]
+    y = xyz_with_pad[1]
+    z = xyz_with_pad[2]
     try:
         rtgrid = ttcrpy_rgrid.Grid3d(x, y, z, cell_slowness=False)
     except ValueError as e:
@@ -251,14 +286,6 @@ def _find_toa_grid_single_receiver(grid_xyz, node_spacing, velocity_grid, statio
     rcv[:,0] = grid_xyz[0].flatten()
     rcv[:,1] = grid_xyz[1].flatten()
     rcv[:,2] = grid_xyz[2].flatten()
-    # And add some padding for dealing with rounding errors in ray-tracing:
-    # (padding is 1 grid cell)
-    rcv[:,0][rcv[:,0]==np.min(rcv[:,0])] = np.min(rcv[:,0]) + node_spacing[0]
-    rcv[:,0][rcv[:,0]==np.max(rcv[:,0])] = np.max(rcv[:,0]) - node_spacing[0]
-    rcv[:,1][rcv[:,1]==np.min(rcv[:,1])] = np.min(rcv[:,1]) + node_spacing[1]
-    rcv[:,1][rcv[:,1]==np.max(rcv[:,1])] = np.max(rcv[:,1]) - node_spacing[1]
-    rcv[:,2][rcv[:,2]==np.min(rcv[:,2])] = np.min(rcv[:,2]) + node_spacing[2]
-    rcv[:,2][rcv[:,2]==np.max(rcv[:,2])] = np.max(rcv[:,2]) - node_spacing[2]
 
     # Perform ray tracing:
     tt, rays = rtgrid.raytrace(src, rcv, 1./velocity_grid, return_rays=True)
