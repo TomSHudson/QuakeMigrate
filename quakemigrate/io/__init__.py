@@ -30,6 +30,7 @@ by QuakeMigrate. This includes:
 from .amplitudes import write_amplitudes  # NOQA
 from .availability import read_availability, write_availability  # NOQA
 from .cut_waveforms import write_cut_waveforms  # NOQA
+from .coa_map import write_coa_map  # NOQA
 from .data import Archive  # NOQA
 from .event import Event  # NOQA
 from .core import (

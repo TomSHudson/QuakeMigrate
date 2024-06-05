@@ -28,6 +28,7 @@ from quakemigrate.io import (
     read_triggered_events,
     write_availability,
     write_cut_waveforms,
+    write_coa_map,
 )
 from quakemigrate.plot.event import event_summary
 from .onsets import Onset
@@ -144,6 +145,9 @@ class QuakeScan:
         NOTE: this data has not been processed or quality-checked!
         NOTE: no padding has been added to take into account the taper applied during
         response removal.
+    write_coa_map : bool, optional
+        Write coalescence map at the origin time (corresponding to maximum coalescence).
+        Default: False.
     xy_files : str, optional
         Path to comma-separated value file (.csv) containing a series of coordinate
         files to plot. Columns: ["File", "Color", "Linewidth", "Linestyle"], where
@@ -256,6 +260,7 @@ class QuakeScan:
         self.write_wa_waveforms = kwargs.get("write_wa_waveforms", False)
         self.wa_waveform_units = kwargs.get("wa_waveform_units", "displacement")
         self.cut_waveform_format = kwargs.get("cut_waveform_format", "MSEED")
+        self.write_coa_map = kwargs.get("write_coa_map", False)
 
         # +++ TO BE REMOVED TO ARCHIVE CLASS +++
         self.pre_cut = None
@@ -546,6 +551,9 @@ class QuakeScan:
                     waveform_type="wa",
                     units=self.wa_waveform_units,
                 )
+
+            if self.write_coa_map:
+                write_coa_map(self.run, event)
 
             del event, marginalised_coa_map
             logging.info(util.log_spacer)
