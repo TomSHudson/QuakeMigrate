@@ -124,8 +124,11 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
     das_f_dur_s = _get_das_starttime_from_fname(das_fnames[nearest_idx], das_data_fmt) - _get_das_starttime_from_fname(das_fnames[nearest_idx-1], das_data_fmt)
 
     # Do a check on window vs das file properties:
+    read_extra_das_files = False
     if (endtime - starttime) >  das_f_dur_s:
         print("Warning: window length (s) > than das file duration, which may raise error.")
+        read_extra_das_files = True
+
 
     # Append files to read:
     das_fnames_to_read = []
@@ -134,10 +137,16 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
         das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs)] )
         if (endtime + post_pad) - das_f_starttime > das_f_dur_s:
              das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs)+1] )
+             if read_extra_das_files:
+                 das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs)-1] )
+                 das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs)+2] )
     # Else if it is before best fit file:
     else:
         das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs)] )
         das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs) - 1] )
+        if read_extra_das_files:
+            das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs) + 1] )
+            das_fnames_to_read.append( das_fnames[np.argmin(abs_time_diffs) - 2] )
 
     # And read in streams for each das file:
     st = Stream()
