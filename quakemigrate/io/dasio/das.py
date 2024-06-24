@@ -156,14 +156,14 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
-                        semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel,
+                        semblance_v_app_min=semblance_v_app_min, convert_strainrate_to_vel=convert_strainrate_to_vel,
                         strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
         elif das_data_fmt == "sgy":
             st += read_das_segy(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
-                        semblance_v_app_min=semblance_stack, convert_strainrate_to_vel=convert_strainrate_to_vel,
+                        semblance_v_app_min=semblance_v_app_min, convert_strainrate_to_vel=convert_strainrate_to_vel,
                         channel_spacing=channel_spacing, gauge_length=gauge_length, 
                         strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
     st = util.merge_stream(st)

@@ -478,7 +478,7 @@ class QuakeScan:
             try:
                 logging.info("\tReading waveform data...")
                 event.add_waveform_data(self._read_event_waveform_data(w_beg, w_end))
-                logging.info("\tComputing 4-D coalescence function...")
+                logging.info("\tComputing 4-D coalescence function...")                
                 event.add_compute_output(  # pylint: disable=E1120
                     *self._compute(event.data, event)
                 )
