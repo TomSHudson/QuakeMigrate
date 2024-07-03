@@ -148,6 +148,9 @@ class QuakeScan:
     write_coa_map : bool, optional
         Write coalescence map at the origin time (corresponding to maximum coalescence).
         Default: False.
+    write_fourD_coa_map : bool, optional
+        Write coalescence map for all time over maginal window.
+        Default: False.
     xy_files : str, optional
         Path to comma-separated value file (.csv) containing a series of coordinate
         files to plot. Columns: ["File", "Color", "Linewidth", "Linestyle"], where
@@ -261,6 +264,7 @@ class QuakeScan:
         self.wa_waveform_units = kwargs.get("wa_waveform_units", "displacement")
         self.cut_waveform_format = kwargs.get("cut_waveform_format", "MSEED")
         self.write_coa_map = kwargs.get("write_coa_map", False)
+        self.write_fourD_coa_map = kwargs.get("write_fourD_coa_map", False)
 
         # +++ TO BE REMOVED TO ARCHIVE CLASS +++
         self.pre_cut = None
@@ -554,6 +558,8 @@ class QuakeScan:
 
             if self.write_coa_map:
                 write_coa_map(self.run, event)
+            if self.write_fourD_coa_map:
+                write_coa_map(self.run, event, fourD_output=True)
 
             del event, marginalised_coa_map
             logging.info(util.log_spacer)

@@ -19,9 +19,10 @@ import quakemigrate.util as util
 def write_coa_map(
     run,
     event,
+    fourD_output=False
 ):
     """
-    Output 3D coalescence map at event origin time.
+    Output 3D (or 4D) coalescence map at event origin time.
 
     Parameters
     ----------
@@ -30,6 +31,9 @@ def write_coa_map(
     event : :class:`~quakemigrate.io.event.Event` object
         Light class encapsulating waveforms, coalescence information, picks and location
         information for a given event.
+    fourD_output : bool 
+        If True, outputs 4D output rather than 3D. Defaults to False. Note that 4D grids 
+        can use a lot of storage space.
 
     Raises
     ------
@@ -45,9 +49,11 @@ def write_coa_map(
 
     # Write coalescence map to file:
     try:
-        coa_map = np.sum(event.map4d, axis=-1)
         file = (fpath / fstem).with_suffix(".npy")
-        np.save(str(file), coa_map)
+        if fourD_output:
+            np.save(str(file), event.map4d)
+        else:
+            np.save(str(file), np.sum(event.map4d, axis=-1))
     except:
         logging.info(f"\t\tNo coalescence map data for event{event.uid}!")
 
