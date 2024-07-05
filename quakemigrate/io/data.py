@@ -157,6 +157,12 @@ class Archive:
         If True, applies a cummulative integration, which performs better for 
         linear fibre geometries. Otherwise, will apply a simpler integration 
         technique. Default is False.
+    bespoke_das_h5_func : python func, optional
+        If specified, will use this function to read in the DAS data instead of the default.
+        Must use das_data_fmt=h5, although technically the data can be any format as long 
+        as the function can read it and output <data>, <headers>, <axis> information. For 
+        structure of these, see quakemigrate.io.dasio.load_das_h5.load_file function.
+        Default is None, i.e. it is not used.
 
     Methods
     -------
@@ -216,7 +222,7 @@ class Archive:
         self.channel_spacing = kwargs.get("channel_spacing", None)
         self.gauge_length = kwargs.get("gauge_length", None)
         self.linfibreapprox = kwargs.get("linfibreapprox", False)
-
+        self.bespoke_das_h5_func = kwargs.get("bespoke_das_h5_func", None)
 
     def __str__(self, response_only=False):
         """
@@ -408,7 +414,8 @@ class Archive:
                             strain_vs_strainrate=self.strain_vs_strainrate,
                             channel_spacing=self.channel_spacing,
                             gauge_length=self.gauge_length,
-                            linfibreapprox=self.linfibreapprox)
+                            linfibreapprox=self.linfibreapprox, 
+                            bespoke_das_h5_func=self.bespoke_das_h5_func)
             except ValueError:
                 raise util.ArchiveEmptyException
 

@@ -26,7 +26,8 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
             spatial_down_samp_factor=1, fk_filter_params={}, apply_notch_filter=False, 
             notch_freqs=[], notch_bw=2.5, semblance_stack=False, semblance_v_app_min=1.0,
             convert_strainrate_to_vel=False, strain_vs_strainrate="strainrate",
-            channel_spacing=None, gauge_length=None, linfibreapprox=False):
+            channel_spacing=None, gauge_length=None, linfibreapprox=False, 
+            bespoke_das_h5_func=None):
     """
     Read in das data for a particular time period, and output to obspy stream.
 
@@ -101,10 +102,16 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
     gauge_length : float, optional
         Used if data format is SEGY (das_data_fmt = sgy). Gauge length of DAS data in metres.
         Default is None. Must be specified if data format is SEGY.
-    linfibreapprox : bool
+    linfibreapprox : bool, optional
         If True, applies a cummulative integration, which performs better for 
         linear fibre geometries. Otherwise, will apply a simpler integration 
         technique. Default is False.
+    bespoke_das_h5_func : python func, optional
+        If specified, will use this function to read in the DAS data instead of the default.
+        Must use das_data_fmt=h5, although technically the data can be any format as long 
+        as the function can read it and output <data>, <headers>, <axis> information. For 
+        structure of these, see quakemigrate.io.dasio.load_das_h5.load_file function.
+        Default is None, i.e. it is not used.
 
     Returns
     -------
@@ -157,7 +164,8 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
                         duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
                         notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
                         semblance_v_app_min=semblance_v_app_min, convert_strainrate_to_vel=convert_strainrate_to_vel,
-                        strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
+                        strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox, 
+                        bespoke_das_h5_func=bespoke_das_h5_func)
         elif das_data_fmt == "sgy":
             st += read_das_segy(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
                         spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
@@ -200,10 +208,14 @@ def read_das_h5(das_fname, first_last_das_channels=[0,-1], network_code="AA", st
                 spatial_down_samp_factor=1, fk_filter_params={}, duplicate_Z_and_E=True, 
                 apply_notch_filter=False, notch_freqs=[], notch_bw=2.5, semblance_stack=False,
                 semblance_v_app_min=1.0, convert_strainrate_to_vel=False, 
-                strain_vs_strainrate="strainrate", linfibreapprox=False):
+                strain_vs_strainrate="strainrate", linfibreapprox=False,
+                bespoke_das_h5_func=None):
     """Function to read in single das h5 file and output as obspy stream object."""
     # Get start time of data:
-    data_and_headers = load_das_h5.load_file(das_fname)
+    if bespoke_das_h5_func:
+        data_and_headers = bespoke_das_h5_func(das_fname)
+    else:
+        data_and_headers = load_das_h5.load_file(das_fname)
     data = data_and_headers[0]
     headers = data_and_headers[1]
     das_start = UTCDateTime(headers['t0'])
