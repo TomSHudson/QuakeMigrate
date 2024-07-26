@@ -108,9 +108,11 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
         technique. Default is False.
     bespoke_das_h5_func : python func, optional
         If specified, will use this function to read in the DAS data instead of the default.
-        Must use das_data_fmt=h5, although technically the data can be any format as long 
+        Must specify das_data_fmt, although technically the data can be any format as long 
         as the function can read it and output <data>, <headers>, <axis> information. For 
-        structure of these, see quakemigrate.io.dasio.load_das_h5.load_file function.
+        structure of these, see quakemigrate.io.dasio.load_das_h5.load_file function. Note that 
+        currently data files must have full start time in their filename in the format:
+        UTC_YYYYMMDD_HHMMSS.MICROSECONDS.<das_data_fmt>.
         Default is None, i.e. it is not used.
 
     Returns
@@ -174,6 +176,17 @@ def read_das(das_archive_path, das_data_fmt, starttime, endtime, pre_pad=0.0, po
                         semblance_v_app_min=semblance_v_app_min, convert_strainrate_to_vel=convert_strainrate_to_vel,
                         channel_spacing=channel_spacing, gauge_length=gauge_length, 
                         strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox)
+        else:
+            if bespoke_das_h5_func == None:
+                raise util.NoBespokeDataFunctionException
+            st += read_das_h5(das_fname, first_last_das_channels=first_last_das_channels, station_prefix="D", 
+                        spatial_down_samp_factor=spatial_down_samp_factor, fk_filter_params=fk_filter_params, 
+                        duplicate_Z_and_E=duplicate_das_comps, apply_notch_filter=apply_notch_filter, 
+                        notch_freqs=notch_freqs, notch_bw=notch_bw, semblance_stack=semblance_stack, 
+                        semblance_v_app_min=semblance_v_app_min, convert_strainrate_to_vel=convert_strainrate_to_vel,
+                        strain_vs_strainrate=strain_vs_strainrate, linfibreapprox=linfibreapprox, 
+                        bespoke_das_h5_func=bespoke_das_h5_func)
+
     st = util.merge_stream(st)
 
     return st
@@ -200,7 +213,19 @@ def _get_das_starttime_from_fname(das_fname, das_data_fmt):
         das_f_starttime_str = str_tmp.replace(".", ":")
         das_f_starttime = UTCDateTime(das_f_starttime_str)
     else:
-        print("Error: <das_data_fmt> =", das_data_fmt, "not supported.")
+        try:
+            das_f_starttime_str = str_tmp.split("UTC_")[-1]
+            das_f_starttime = UTCDateTime(year=int(das_f_starttime_str[0:4]), 
+                                        month=int(das_f_starttime_str[4:6]),
+                                        day=int(das_f_starttime_str[6:8]),
+                                        hour=int(das_f_starttime_str[9:11]),
+                                        minute=int(das_f_starttime_str[11:13]),
+                                        second=int(das_f_starttime_str[13:15]),
+                                        microsecond=int((10**6) * (10**(-1 * len(das_f_starttime_str[16:]))) 
+                                                    * int(das_f_starttime_str[16:])))
+        except:
+            raise util.DASUnsupportedDataFmtException
+
     return das_f_starttime
 
 

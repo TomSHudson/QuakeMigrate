@@ -1024,6 +1024,34 @@ class DASSEGYNoGLException(Exception):
         super().__init__("Specified DAS data format requires <gauge_length> to be specfied.")
 
 
+class DASUnsupportedDataFmtException(Exception):
+    """
+    Custom exception to handle case when the user has specified an unsupported DAS data format 
+    (<das_data_fmt>).
+    """
+
+    def __init__(self):
+        super().__init__("Specified DAS data format not supported.")
+
+
+class NoBespokeDataFunctionException(Exception):
+    """
+    Custom exception to handle case when the user has not specified a bespoke DAS data format 
+    reading function.
+    """
+
+    def __init__(self):
+        super().__init__("Failed to read unsupported DAS data format because <bespoke_das_h5_func> is not specified.")
+
+
+class DASArchiveEmptyException(Exception):
+    """
+    Custom exception to handle case when DAS data archive is empty or of unsupported format.
+    """
+
+    def __init__(self):
+        super().__init__("DAS data archive either doesn't contain data for the specified time period, or is of an unsupported format for reading.")
+
 
 
 

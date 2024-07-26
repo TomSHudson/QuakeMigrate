@@ -417,7 +417,12 @@ class Archive:
                             linfibreapprox=self.linfibreapprox, 
                             bespoke_das_h5_func=self.bespoke_das_h5_func)
             except ValueError:
-                raise util.ArchiveEmptyException
+                # Raise error if no data exists:
+                if len(st) == 0:
+                    print("Warning: No standard or DAS data exists or can be read.")
+                    raise util.DASArchiveEmptyException
+                else:
+                   print("Warning: DAS data archive either doesn't contain data for the specified time period, or is of an unsupported format for reading. Continuing with standard data only.")
 
         # Merge waveforms channel-by-channel with no-clobber merge
         st = util.merge_stream(st)
